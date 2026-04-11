@@ -30,4 +30,4 @@ app.include_router(agent.router)
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "app": "QAFI"}
+    return {"status": "ok", "app": "QAFI", "version": "0.1.0"}
