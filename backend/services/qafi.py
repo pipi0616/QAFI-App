@@ -305,6 +305,13 @@ def lookup_variant(protein_id: str, variant_query: str, method: str = "qafisplit
     except Exception:
         gnomad_data = None
 
+    # PubMed literature
+    from .literature import search_literature
+    try:
+        literature_data = search_literature(protein_name, wt, position, mut)
+    except Exception:
+        literature_data = None
+
     return {
         "variant": variant_name,
         "protein_id": protein_id,
@@ -329,6 +336,7 @@ def lookup_variant(protein_id: str, variant_query: str, method: str = "qafisplit
         "clinvar": clinvar_data,
         "alphamissense": alphamissense_data,
         "gnomad": gnomad_data,
+        "literature": literature_data,
     }
 
 

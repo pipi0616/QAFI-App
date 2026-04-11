@@ -80,20 +80,28 @@ interface LookupResult {
     same_position: any[];
     gene_missense_count: number;
   };
+  literature?: {
+    variant_articles: { pmid: string; title: string; authors: string; journal: string; year: string; url: string }[];
+    variant_search_count: number;
+    gene_articles: { pmid: string; title: string; authors: string; journal: string; year: string; url: string }[];
+    gene_search_count: number;
+    total_gene_papers: number;
+  };
 }
 
 const IMPACT_COLORS = { damaging: "#dc2626", moderate: "#ca8a04", benign: "#16a34a" };
 const IMPACT_BG = { damaging: "#fef2f2", moderate: "#fefce8", benign: "#f0fdf4" };
 
-type TabKey = "evidence" | "clinvar" | "alphamissense" | "gnomad" | "position" | "ai";
+type TabKey = "evidence" | "clinvar" | "alphamissense" | "gnomad" | "literature" | "position" | "ai";
 
 const TABS: { key: TabKey; label: string }[] = [
   { key: "evidence", label: "Evidence" },
   { key: "clinvar", label: "ClinVar" },
   { key: "alphamissense", label: "AlphaMissense" },
   { key: "gnomad", label: "gnomAD" },
+  { key: "literature", label: "Literature" },
   { key: "position", label: "Position" },
-  { key: "ai", label: "AI Assistant" },
+  { key: "ai", label: "AI" },
 ];
 
 export default function Predict() {
@@ -330,6 +338,11 @@ export default function Predict() {
                 )}
                 {tab.key === "gnomad" && result.gnomad?.variant && (
                   <span style={{ width: 8, height: 8, borderRadius: "50%", background: result.gnomad.variant.freq_color, display: "inline-block" }} />
+                )}
+                {tab.key === "literature" && result.literature && (
+                  <span style={{ fontSize: 11, color: "#64748b", fontWeight: 400 }}>
+                    {(result.literature.variant_search_count || 0) + (result.literature.gene_search_count || 0)}
+                  </span>
                 )}
               </button>
             ))}
@@ -654,6 +667,60 @@ export default function Predict() {
               </div>
             )}
 
+            {/* Literature tab */}
+            {activeTab === "literature" && (
+              <div>
+                {!result.literature ? (
+                  <div style={{ padding: 20, background: "#f8fafc", borderRadius: 8, border: "1px solid #e2e8f0" }}>
+                    <div style={{ fontSize: 15, fontWeight: 600, color: "#475569" }}>Literature search unavailable</div>
+                  </div>
+                ) : (
+                  <>
+                    {/* Variant-specific articles */}
+                    <div style={{ marginBottom: 20 }}>
+                      <div style={{ fontSize: 15, fontWeight: 600, color: "#0f172a", marginBottom: 4 }}>
+                        Variant-Specific Publications
+                      </div>
+                      <div style={{ fontSize: 13, color: "#94a3b8", marginBottom: 12 }}>
+                        Papers mentioning {result.variant} specifically
+                        ({result.literature.variant_search_count} found)
+                      </div>
+                      {result.literature.variant_articles.length > 0 ? (
+                        result.literature.variant_articles.map((a) => (
+                          <ArticleCard key={a.pmid} article={a} />
+                        ))
+                      ) : (
+                        <div style={{ padding: 16, background: "#f8fafc", borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 13, color: "#64748b" }}>
+                          No publications found for this specific variant.
+                          This is a novel or unreported variant.
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Gene clinical articles */}
+                    <div>
+                      <div style={{ fontSize: 15, fontWeight: 600, color: "#0f172a", marginBottom: 4 }}>
+                        {result.protein_name} Clinical Publications
+                      </div>
+                      <div style={{ fontSize: 13, color: "#94a3b8", marginBottom: 12 }}>
+                        Papers about {result.protein_name} mutations and clinical significance
+                        ({result.literature.gene_search_count} found · {result.literature.total_gene_papers} total gene papers)
+                      </div>
+                      {result.literature.gene_articles.length > 0 ? (
+                        result.literature.gene_articles.map((a) => (
+                          <ArticleCard key={a.pmid} article={a} />
+                        ))
+                      ) : (
+                        <div style={{ padding: 16, background: "#f8fafc", borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 13, color: "#64748b" }}>
+                          No clinical publications found for this gene.
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+
             {/* Position tab */}
             {activeTab === "position" && (
               <div>
@@ -824,6 +891,25 @@ export default function Predict() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function ArticleCard({ article }: { article: { pmid: string; title: string; authors: string; journal: string; year: string; url: string } }) {
+  return (
+    <div style={{ padding: "14px 16px", borderBottom: "1px solid #f1f5f9" }}>
+      <a
+        href={article.url}
+        target="_blank"
+        rel="noopener noreferrer"
+        style={{ fontSize: 14, fontWeight: 600, color: "#1e293b", textDecoration: "none", lineHeight: 1.4, display: "block" }}
+      >
+        {article.title}
+      </a>
+      <div style={{ fontSize: 12, color: "#64748b", marginTop: 4 }}>
+        {article.authors} · <em>{article.journal}</em> · {article.year}
+        <span style={{ marginLeft: 8, color: "#3b82f6" }}>PMID:{article.pmid}</span>
+      </div>
     </div>
   );
 }
