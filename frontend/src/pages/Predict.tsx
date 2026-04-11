@@ -70,17 +70,28 @@ interface LookupResult {
     same_position: { variant: string; am_score: number; am_class: string; am_class_label: string; am_class_color: string }[];
     summary: { total: number; pathogenic: number; benign: number; ambiguous: number } | null;
   };
+  gnomad?: {
+    available: boolean;
+    variant: {
+      hgvsp: string; rsids: string[]; allele_count: number; allele_number: number;
+      allele_freq: number; homozygote_count: number; freq_label: string;
+      freq_interpretation: string; freq_color: string;
+    } | null;
+    same_position: any[];
+    gene_missense_count: number;
+  };
 }
 
 const IMPACT_COLORS = { damaging: "#dc2626", moderate: "#ca8a04", benign: "#16a34a" };
 const IMPACT_BG = { damaging: "#fef2f2", moderate: "#fefce8", benign: "#f0fdf4" };
 
-type TabKey = "evidence" | "clinvar" | "alphamissense" | "position" | "ai";
+type TabKey = "evidence" | "clinvar" | "alphamissense" | "gnomad" | "position" | "ai";
 
 const TABS: { key: TabKey; label: string }[] = [
   { key: "evidence", label: "Evidence" },
   { key: "clinvar", label: "ClinVar" },
   { key: "alphamissense", label: "AlphaMissense" },
+  { key: "gnomad", label: "gnomAD" },
   { key: "position", label: "Position" },
   { key: "ai", label: "AI Assistant" },
 ];
@@ -317,6 +328,9 @@ export default function Predict() {
                 {tab.key === "alphamissense" && result.alphamissense?.variant && (
                   <span style={{ width: 8, height: 8, borderRadius: "50%", background: result.alphamissense.variant.am_class_color, display: "inline-block" }} />
                 )}
+                {tab.key === "gnomad" && result.gnomad?.variant && (
+                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: result.gnomad.variant.freq_color, display: "inline-block" }} />
+                )}
               </button>
             ))}
           </div>
@@ -546,6 +560,91 @@ export default function Predict() {
                           <div key={s.label} style={{ flex: 1, padding: 10, background: "#f8fafc", borderRadius: 6, textAlign: "center" }}>
                             <div style={{ fontSize: 18, fontWeight: 700, color: s.color }}>{s.count}</div>
                             <div style={{ fontSize: 11, color: "#94a3b8" }}>{s.label}</div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+
+            {/* gnomAD tab */}
+            {activeTab === "gnomad" && (
+              <div>
+                {!result.gnomad?.available ? (
+                  <div style={{ padding: 20, background: "#f8fafc", borderRadius: 8, border: "1px solid #e2e8f0" }}>
+                    <div style={{ fontSize: 15, fontWeight: 600, color: "#475569" }}>gnomAD data not available</div>
+                  </div>
+                ) : result.gnomad.variant && (
+                  <>
+                    {/* Main frequency card */}
+                    <div style={{
+                      padding: 20, borderRadius: 8, marginBottom: 16,
+                      background: result.gnomad.variant.allele_freq === 0 ? "#fef2f2" : "#f8fafc",
+                      border: `1px solid ${result.gnomad.variant.freq_color}30`,
+                    }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                        <div>
+                          <div style={{ fontSize: 18, fontWeight: 700, color: result.gnomad.variant.freq_color }}>
+                            {result.gnomad.variant.freq_label}
+                          </div>
+                          <div style={{ fontSize: 14, color: "#475569", marginTop: 6 }}>
+                            {result.gnomad.variant.freq_interpretation}
+                          </div>
+                          {result.gnomad.variant.rsids.length > 0 && (
+                            <div style={{ fontSize: 13, color: "#64748b", marginTop: 6 }}>
+                              rsID: {result.gnomad.variant.rsids.map((rs) => (
+                                <a key={rs} href={`https://www.ncbi.nlm.nih.gov/snp/${rs}`} target="_blank" rel="noopener noreferrer"
+                                  style={{ color: "#3b82f6", marginRight: 8 }}>{rs}</a>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        <div style={{ textAlign: "right" }}>
+                          <div style={{ fontSize: 28, fontWeight: 700, fontFamily: "monospace", color: result.gnomad.variant.freq_color }}>
+                            {result.gnomad.variant.allele_freq === 0
+                              ? "0"
+                              : result.gnomad.variant.allele_freq < 0.001
+                                ? result.gnomad.variant.allele_freq.toExponential(2)
+                                : result.gnomad.variant.allele_freq.toFixed(4)}
+                          </div>
+                          <div style={{ fontSize: 11, color: "#94a3b8" }}>Allele Frequency</div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Counts */}
+                    <div style={{ display: "flex", gap: 12, marginBottom: 16 }}>
+                      {[
+                        { label: "Allele Count", value: result.gnomad.variant.allele_count.toLocaleString() },
+                        { label: "Allele Number", value: result.gnomad.variant.allele_number ? result.gnomad.variant.allele_number.toLocaleString() : "—" },
+                        { label: "Homozygotes", value: result.gnomad.variant.homozygote_count.toLocaleString() },
+                        { label: "Gene Missense Variants", value: result.gnomad.gene_missense_count.toLocaleString() },
+                      ].map((s) => (
+                        <div key={s.label} style={{ flex: 1, padding: 12, background: "#f8fafc", borderRadius: 8, textAlign: "center" }}>
+                          <div style={{ fontSize: 18, fontWeight: 700, color: "#0f172a" }}>{s.value}</div>
+                          <div style={{ fontSize: 11, color: "#94a3b8" }}>{s.label}</div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Clinical guideline */}
+                    <div style={{ padding: 14, background: "#eff6ff", borderRadius: 8, border: "1px solid #bfdbfe", fontSize: 13, color: "#1e40af" }}>
+                      <strong>ACMG Guideline:</strong> Variants with AF &gt; 5% in any population are classified as BA1 (standalone benign).
+                      Variants absent from gnomAD support PM2 (moderate pathogenic evidence).
+                    </div>
+
+                    {/* Same position variants */}
+                    {result.gnomad.same_position.length > 0 && (
+                      <div style={{ marginTop: 16 }}>
+                        <div style={{ fontSize: 14, fontWeight: 600, color: "#475569", marginBottom: 10 }}>
+                          Other variants at this position in gnomAD
+                        </div>
+                        {result.gnomad.same_position.map((v, i) => (
+                          <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "8px 12px", borderBottom: "1px solid #f1f5f9", fontSize: 13 }}>
+                            <span style={{ fontFamily: "monospace", fontWeight: 600 }}>{v.hgvsp}</span>
+                            <span style={{ color: v.freq_color }}>{v.freq_label} (AF={v.allele_freq === 0 ? "0" : v.allele_freq.toExponential(2)})</span>
                           </div>
                         ))}
                       </div>
