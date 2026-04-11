@@ -20,6 +20,8 @@ export const api = {
     request<any>("/predict/run", { method: "POST", body: JSON.stringify(data) }),
   getResults: (method: string, proteinId: string) =>
     request<any>(`/predict/results/${method}/${proteinId}`),
+  lookupVariant: (proteinId: string, variant: string, method?: string) =>
+    request<any>(`/predict/lookup/${proteinId}/${variant}${method ? `?method=${method}` : ""}`),
 
   // Analysis
   getFeatures: (proteinId: string) => request<any>(`/analysis/features/${proteinId}`),

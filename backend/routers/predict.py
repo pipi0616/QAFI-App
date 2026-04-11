@@ -68,7 +68,7 @@ def run_prediction(req: PredictRequest):
 
 @router.get("/results/{method}/{protein_id}")
 def get_results(method: str, protein_id: str):
-    """Get previously computed QAFI prediction results."""
+    """Get previously computed QAFI prediction results (batch)."""
     predictions = qafi.load_qafi_results(method, protein_id)
     if predictions is None:
         raise HTTPException(
@@ -80,3 +80,15 @@ def get_results(method: str, protein_id: str):
         "protein_id": protein_id,
         "predictions": predictions,
     }
+
+
+@router.get("/lookup/{protein_id}/{variant}")
+def lookup_variant(protein_id: str, variant: str, method: str = "qafisplit3"):
+    """Look up a single variant — the primary clinical endpoint."""
+    result = qafi.lookup_variant(protein_id, variant, method)
+    if result is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Variant '{variant}' not found for protein {protein_id}",
+        )
+    return result
