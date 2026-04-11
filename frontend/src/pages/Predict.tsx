@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef } from "react";
 import { api } from "../api/client";
-import { Search, AlertTriangle, CheckCircle, HelpCircle, ChevronDown, ChevronUp, Bot, Send, User } from "lucide-react";
+import { Search, AlertTriangle, CheckCircle, HelpCircle, Bot, Send, User, ExternalLink } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
   Cell, ReferenceLine,
@@ -69,6 +69,15 @@ interface LookupResult {
 const IMPACT_COLORS = { damaging: "#dc2626", moderate: "#ca8a04", benign: "#16a34a" };
 const IMPACT_BG = { damaging: "#fef2f2", moderate: "#fefce8", benign: "#f0fdf4" };
 
+type TabKey = "evidence" | "clinvar" | "position" | "ai";
+
+const TABS: { key: TabKey; label: string }[] = [
+  { key: "evidence", label: "Evidence" },
+  { key: "clinvar", label: "ClinVar" },
+  { key: "position", label: "Position" },
+  { key: "ai", label: "AI Assistant" },
+];
+
 export default function Predict() {
   const [proteins, setProteins] = useState<any[]>([]);
   const [selectedProtein, setSelectedProtein] = useState("Q9Y375");
@@ -76,7 +85,7 @@ export default function Predict() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<LookupResult | null>(null);
   const [error, setError] = useState("");
-  const [showAllPos, setShowAllPos] = useState(false);
+  const [activeTab, setActiveTab] = useState<TabKey>("evidence");
 
   // AI Chat state
   const [chatMessages, setChatMessages] = useState<{ role: "user" | "assistant"; content: string }[]>([]);
@@ -91,7 +100,6 @@ export default function Predict() {
     });
   }, []);
 
-  // Reset chat when variant changes
   useEffect(() => {
     setChatMessages([]);
     setChatInput("");
@@ -132,7 +140,8 @@ export default function Predict() {
     try {
       const res = await api.lookupVariant(selectedProtein, query.trim());
       setResult(res);
-    } catch (e: any) {
+      setActiveTab("evidence");
+    } catch {
       setError(`Variant "${query}" not found for ${selectedProtein}. Try format: L117H, M1A, etc.`);
     }
     setLoading(false);
@@ -141,6 +150,11 @@ export default function Predict() {
   const scorePercent = result
     ? ((result.score - result.score_range.min) / (result.score_range.max - result.score_range.min)) * 100
     : 0;
+
+  // ClinVar badge for tab
+  const clinvarBadge = result?.clinvar?.exact_match
+    ? result.clinvar.exact_match.significance.split(" ").map(w => w[0]).join("").toUpperCase()
+    : null;
 
   return (
     <div style={{ maxWidth: 900, margin: "0 auto" }}>
@@ -178,31 +192,15 @@ export default function Predict() {
                 onChange={(e) => setQuery(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleSearch()}
                 placeholder="e.g. L117H, M1A, R230W..."
-                style={{
-                  flex: 1,
-                  padding: "10px 14px",
-                  borderRadius: 8,
-                  border: "1px solid #cbd5e1",
-                  fontSize: 15,
-                  fontFamily: "monospace",
-                }}
+                style={{ flex: 1, padding: "10px 14px", borderRadius: 8, border: "1px solid #cbd5e1", fontSize: 15, fontFamily: "monospace" }}
               />
               <button
                 onClick={handleSearch}
                 disabled={loading || !query.trim()}
                 style={{
-                  padding: "10px 24px",
-                  borderRadius: 8,
-                  border: "none",
-                  background: "#3b82f6",
-                  color: "#fff",
-                  fontSize: 15,
-                  fontWeight: 600,
-                  cursor: "pointer",
-                  opacity: loading || !query.trim() ? 0.5 : 1,
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
+                  padding: "10px 24px", borderRadius: 8, border: "none", background: "#3b82f6",
+                  color: "#fff", fontSize: 15, fontWeight: 600, cursor: "pointer",
+                  opacity: loading || !query.trim() ? 0.5 : 1, display: "flex", alignItems: "center", gap: 6,
                 }}
               >
                 <Search size={18} />
@@ -222,8 +220,8 @@ export default function Predict() {
       {/* Result */}
       {result && (
         <>
-          {/* Classification card */}
-          <div style={{ ...card, marginBottom: 20, borderLeft: `5px solid ${result.color}` }}>
+          {/* === Classification card (always visible) === */}
+          <div style={{ ...card, marginBottom: 0, borderLeft: `5px solid ${result.color}`, borderRadius: "12px 12px 0 0" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
               <div>
                 <div style={{ fontSize: 13, color: "#64748b", marginBottom: 4 }}>
@@ -234,13 +232,8 @@ export default function Predict() {
                 </div>
                 <div
                   style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: 8,
-                    padding: "8px 20px",
-                    borderRadius: 8,
-                    background: result.color + "12",
-                    border: `1px solid ${result.color}40`,
+                    display: "inline-flex", alignItems: "center", gap: 8, padding: "8px 20px",
+                    borderRadius: 8, background: result.color + "12", border: `1px solid ${result.color}40`,
                   }}
                 >
                   {result.classification.includes("Pathogenic") ? (
@@ -260,7 +253,7 @@ export default function Predict() {
               </div>
 
               {/* Score gauge */}
-              <div style={{ textAlign: "center", minWidth: 160 }}>
+              <div style={{ textAlign: "center", minWidth: 150 }}>
                 <div style={{ fontSize: 12, color: "#64748b", marginBottom: 8 }}>QAFI Score</div>
                 <div style={{ fontSize: 36, fontWeight: 700, color: result.color, fontFamily: "monospace" }}>
                   {result.score.toFixed(2)}
@@ -268,17 +261,11 @@ export default function Predict() {
                 <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 4 }}>
                   Percentile: {result.percentile.toFixed(0)}%
                 </div>
-                {/* Score bar */}
                 <div style={{ marginTop: 8, background: "#f1f5f9", borderRadius: 4, height: 8, position: "relative" }}>
                   <div
                     style={{
-                      position: "absolute",
-                      left: 0,
-                      top: 0,
-                      height: "100%",
-                      width: `${scorePercent}%`,
-                      background: `linear-gradient(to right, #16a34a, #ca8a04, #dc2626)`,
-                      borderRadius: 4,
+                      position: "absolute", left: 0, top: 0, height: "100%", width: `${scorePercent}%`,
+                      background: "linear-gradient(to right, #16a34a, #ca8a04, #dc2626)", borderRadius: 4,
                     }}
                   />
                 </div>
@@ -290,369 +277,306 @@ export default function Predict() {
             </div>
           </div>
 
-          {/* Evidence */}
-          <div style={{ ...card, marginBottom: 20 }}>
-            <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 16 }}>Evidence</h3>
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {result.evidence.map((e, i) => (
-                <div
-                  key={i}
-                  style={{
-                    display: "flex",
-                    alignItems: "flex-start",
-                    gap: 12,
-                    padding: 14,
-                    borderRadius: 8,
-                    background: IMPACT_BG[e.impact],
-                    border: `1px solid ${IMPACT_COLORS[e.impact]}20`,
-                  }}
-                >
-                  <div
-                    style={{
-                      width: 8,
-                      height: 8,
-                      borderRadius: "50%",
-                      background: IMPACT_COLORS[e.impact],
-                      marginTop: 6,
-                      flexShrink: 0,
-                    }}
-                  />
-                  <div style={{ flex: 1 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <span style={{ fontSize: 14, fontWeight: 600, color: "#0f172a" }}>
-                        {e.feature}
-                      </span>
-                      <span style={{ fontSize: 13, fontFamily: "monospace", color: "#475569" }}>
-                        {e.value}
-                      </span>
-                    </div>
-                    <div style={{ fontSize: 13, color: "#475569", marginTop: 2 }}>
-                      {e.detail}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* ClinVar */}
-          <div style={{ ...card, marginBottom: 20 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
-              <h3 style={{ fontSize: 16, fontWeight: 600, margin: 0 }}>ClinVar</h3>
-              <span style={{ fontSize: 12, color: "#94a3b8" }}>Clinical variant database</span>
-            </div>
-
-            {!result.clinvar || !result.clinvar.found ? (
-              <div style={{ padding: "16px 20px", background: "#f8fafc", borderRadius: 8, border: "1px solid #e2e8f0" }}>
-                <div style={{ fontSize: 14, fontWeight: 600, color: "#475569" }}>
-                  Not found in ClinVar
-                </div>
-                <div style={{ fontSize: 13, color: "#94a3b8", marginTop: 4 }}>
-                  This variant has no ClinVar record. {result.clinvar?.same_gene_count
-                    ? `${result.clinvar.same_gene_count} other ${result.protein_name} variants are in ClinVar.`
-                    : ""}
-                </div>
-              </div>
-            ) : (
-              <div>
-                {/* Exact match */}
-                {result.clinvar.exact_match && (
-                  <div style={{
-                    padding: "16px 20px",
-                    borderRadius: 8,
-                    border: "1px solid #e2e8f0",
-                    background: result.clinvar.exact_match.significance.toLowerCase().includes("pathogenic")
-                      ? "#fef2f2"
-                      : result.clinvar.exact_match.significance.toLowerCase().includes("benign")
-                        ? "#f0fdf4"
-                        : "#fefce8",
-                    marginBottom: 12,
-                  }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                      <div>
-                        <div style={{ fontSize: 15, fontWeight: 700, color: "#0f172a" }}>
-                          {result.clinvar.exact_match.significance}
-                        </div>
-                        <div style={{ fontSize: 13, color: "#64748b", marginTop: 4 }}>
-                          {result.clinvar.exact_match.review_status}
-                        </div>
-                        {result.clinvar.exact_match.traits.length > 0 && (
-                          <div style={{ fontSize: 13, color: "#475569", marginTop: 6 }}>
-                            Condition: {result.clinvar.exact_match.traits.join(", ")}
-                          </div>
-                        )}
-                        <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 4 }}>
-                          {result.clinvar.exact_match.num_submissions} submission(s)
-                          {result.clinvar.exact_match.last_evaluated && ` · Last evaluated: ${result.clinvar.exact_match.last_evaluated.split(" ")[0]}`}
-                        </div>
-                      </div>
-                      <div style={{ textAlign: "right" }}>
-                        <div style={{ fontSize: 20, letterSpacing: 2 }}>
-                          {"★".repeat(result.clinvar.exact_match.stars)}
-                          {"☆".repeat(4 - result.clinvar.exact_match.stars)}
-                        </div>
-                        <a
-                          href={result.clinvar.exact_match.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          style={{ fontSize: 12, color: "#3b82f6" }}
-                        >
-                          {result.clinvar.exact_match.accession} →
-                        </a>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Same position variants */}
-                {result.clinvar.same_position.length > 0 && (
-                  <div>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: "#64748b", marginBottom: 8 }}>
-                      Other variants at this position in ClinVar:
-                    </div>
-                    {result.clinvar.same_position.map((v, i) => (
-                      <div
-                        key={i}
-                        style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          padding: "8px 12px",
-                          borderBottom: "1px solid #f1f5f9",
-                          fontSize: 13,
-                        }}
-                      >
-                        <span style={{ fontFamily: "monospace", fontWeight: 600 }}>{v.protein_change}</span>
-                        <span style={{ color: "#64748b" }}>{v.significance || "No classification"}</span>
-                        <a href={v.url} target="_blank" rel="noopener noreferrer" style={{ color: "#3b82f6", fontSize: 12 }}>
-                          View →
-                        </a>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* Gene stats */}
-                {result.clinvar.same_gene_count > 0 && (
-                  <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 8 }}>
-                    {result.clinvar.same_gene_count} total {result.protein_name} variants in ClinVar
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Position context */}
-          <div style={{ ...card }}>
-            <div
-              style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}
-              onClick={() => setShowAllPos(!showAllPos)}
-            >
-              <div>
-                <h3 style={{ fontSize: 16, fontWeight: 600, margin: 0 }}>
-                  Other Substitutions at Position {result.position}
-                </h3>
-                <p style={{ fontSize: 13, color: "#64748b", margin: "4px 0 0" }}>
-                  {result.position_context.total_variants} possible substitutions &middot;
-                  This variant ranks #{result.position_context.rank} of {result.position_context.total_variants}
-                </p>
-              </div>
-              {showAllPos ? <ChevronUp size={20} color="#64748b" /> : <ChevronDown size={20} color="#64748b" />}
-            </div>
-
-            {/* Always show the bar chart */}
-            <div style={{ marginTop: 16 }}>
-              <ResponsiveContainer width="100%" height={200}>
-                <BarChart
-                  data={result.position_context.variants}
-                  margin={{ left: 10, right: 10 }}
-                >
-                  <XAxis dataKey="mut" tick={{ fontSize: 12, fontFamily: "monospace" }} />
-                  <YAxis tick={{ fontSize: 11 }} domain={["auto", "auto"]} />
-                  <Tooltip
-                    content={({ active, payload }) => {
-                      if (!active || !payload?.length) return null;
-                      const d = payload[0].payload;
-                      return (
-                        <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 6, padding: 8, fontSize: 13 }}>
-                          <div style={{ fontWeight: 600 }}>{d.variant}</div>
-                          <div>Score: {d.score.toFixed(4)}</div>
-                        </div>
-                      );
-                    }}
-                  />
-                  <ReferenceLine y={result.score} stroke={result.color} strokeDasharray="4 4" label="" />
-                  <Bar dataKey="score" radius={[3, 3, 0, 0]}>
-                    {result.position_context.variants.map((v, i) => (
-                      <Cell
-                        key={i}
-                        fill={v.variant === result.variant ? result.color : "#cbd5e1"}
-                      />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-
-            {/* Expandable table */}
-            {showAllPos && (
-              <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 12 }}>
-                <thead>
-                  <tr style={{ borderBottom: "2px solid #e2e8f0" }}>
-                    <th style={thStyle}>Variant</th>
-                    <th style={thStyle}>Substitution</th>
-                    <th style={thStyle}>Score</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {result.position_context.variants.map((v) => (
-                    <tr
-                      key={v.variant}
-                      style={{
-                        borderBottom: "1px solid #f1f5f9",
-                        background: v.variant === result.variant ? `${result.color}08` : "transparent",
-                        fontWeight: v.variant === result.variant ? 700 : 400,
-                      }}
-                    >
-                      <td style={tdStyle}>{v.variant} {v.variant === result.variant && " <--"}</td>
-                      <td style={tdStyle}>{result.wt} &rarr; {v.mut}</td>
-                      <td style={{ ...tdStyle, fontFamily: "monospace" }}>{v.score.toFixed(4)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
-
-          {/* AI Assistant */}
-          <div style={{ ...card, marginTop: 20, borderTop: "3px solid #0f172a" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
-              <Bot size={20} color="#0f172a" />
-              <h3 style={{ fontSize: 16, fontWeight: 600, margin: 0 }}>
-                Ask AI about this variant
-              </h3>
-            </div>
-
-            {/* Quick prompts */}
-            {chatMessages.length === 0 && (
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
-                {[
-                  `Why is ${result.variant} classified as ${result.classification}?`,
-                  "Generate a clinical report for this variant",
-                  "What is the clinical significance of this position?",
-                  "Compare with the most damaging substitution at this position",
-                ].map((prompt) => (
-                  <button
-                    key={prompt}
-                    onClick={() => sendChat(prompt)}
-                    style={{
-                      padding: "8px 14px",
-                      borderRadius: 20,
-                      border: "1px solid #e2e8f0",
-                      background: "#f8fafc",
-                      fontSize: 13,
-                      color: "#475569",
-                      cursor: "pointer",
-                      textAlign: "left",
-                    }}
-                  >
-                    {prompt}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {/* Chat messages */}
-            {chatMessages.length > 0 && (
-              <div
+          {/* === Tab bar === */}
+          <div
+            style={{
+              display: "flex", background: "#fff", borderLeft: "1px solid #e2e8f0",
+              borderRight: "1px solid #e2e8f0", padding: "0 8px",
+            }}
+          >
+            {TABS.map((tab) => (
+              <button
+                key={tab.key}
+                onClick={() => setActiveTab(tab.key)}
                 style={{
-                  maxHeight: 400,
-                  overflow: "auto",
-                  marginBottom: 12,
-                  padding: "0 4px",
+                  padding: "12px 20px",
+                  fontSize: 14,
+                  fontWeight: activeTab === tab.key ? 600 : 400,
+                  color: activeTab === tab.key ? "#0f172a" : "#94a3b8",
+                  background: "transparent",
+                  border: "none",
+                  borderBottom: activeTab === tab.key ? "2px solid #3b82f6" : "2px solid transparent",
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
                 }}
               >
-                {chatMessages.map((msg, i) => (
+                {tab.label}
+                {/* ClinVar status dot */}
+                {tab.key === "clinvar" && result.clinvar && (
+                  <span
+                    style={{
+                      width: 8, height: 8, borderRadius: "50%",
+                      background: result.clinvar.found ? "#10b981" : "#cbd5e1",
+                      display: "inline-block",
+                    }}
+                  />
+                )}
+              </button>
+            ))}
+          </div>
+
+          {/* === Tab content === */}
+          <div style={{ ...card, borderRadius: "0 0 12px 12px", marginBottom: 20, minHeight: 200 }}>
+
+            {/* Evidence tab */}
+            {activeTab === "evidence" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {result.evidence.map((e, i) => (
                   <div
                     key={i}
                     style={{
-                      display: "flex",
-                      gap: 10,
-                      marginBottom: 14,
-                      alignItems: "flex-start",
+                      display: "flex", alignItems: "flex-start", gap: 12, padding: 14,
+                      borderRadius: 8, background: IMPACT_BG[e.impact], border: `1px solid ${IMPACT_COLORS[e.impact]}20`,
                     }}
                   >
                     <div
                       style={{
-                        width: 28,
-                        height: 28,
-                        borderRadius: 6,
-                        background: msg.role === "user" ? "#3b82f6" : "#0f172a",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        flexShrink: 0,
+                        width: 8, height: 8, borderRadius: "50%",
+                        background: IMPACT_COLORS[e.impact], marginTop: 6, flexShrink: 0,
                       }}
-                    >
-                      {msg.role === "user" ? (
-                        <User size={14} color="#fff" />
-                      ) : (
-                        <Bot size={14} color="#38bdf8" />
-                      )}
-                    </div>
-                    <div
-                      style={{
-                        fontSize: 14,
-                        lineHeight: 1.7,
-                        color: "#1e293b",
-                        whiteSpace: "pre-wrap",
-                        flex: 1,
-                      }}
-                    >
-                      {msg.content}
+                    />
+                    <div style={{ flex: 1 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <span style={{ fontSize: 14, fontWeight: 600, color: "#0f172a" }}>{e.feature}</span>
+                        <span style={{ fontSize: 13, fontFamily: "monospace", color: "#475569" }}>{e.value}</span>
+                      </div>
+                      <div style={{ fontSize: 13, color: "#475569", marginTop: 2 }}>{e.detail}</div>
                     </div>
                   </div>
                 ))}
-                {chatLoading && (
-                  <div style={{ display: "flex", gap: 10, alignItems: "center", color: "#94a3b8" }}>
-                    <Bot size={18} /> <span style={{ fontSize: 14 }}>Thinking...</span>
-                  </div>
+                {result.evidence.length === 0 && (
+                  <p style={{ color: "#94a3b8", fontSize: 14 }}>No feature evidence available for this variant.</p>
                 )}
-                <div ref={chatEndRef} />
               </div>
             )}
 
-            {/* Input */}
-            <div style={{ display: "flex", gap: 8 }}>
-              <input
-                value={chatInput}
-                onChange={(e) => setChatInput(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && sendChat()}
-                placeholder="Ask about this variant..."
-                style={{
-                  flex: 1,
-                  padding: "10px 14px",
-                  borderRadius: 8,
-                  border: "1px solid #e2e8f0",
-                  fontSize: 14,
-                  outline: "none",
-                }}
-              />
-              <button
-                onClick={() => sendChat()}
-                disabled={chatLoading || !chatInput.trim()}
-                style={{
-                  padding: "10px 16px",
-                  borderRadius: 8,
-                  border: "none",
-                  background: "#0f172a",
-                  color: "#fff",
-                  cursor: "pointer",
-                  opacity: chatLoading || !chatInput.trim() ? 0.4 : 1,
-                }}
-              >
-                <Send size={16} />
-              </button>
-            </div>
+            {/* ClinVar tab */}
+            {activeTab === "clinvar" && (
+              <div>
+                {!result.clinvar || !result.clinvar.found ? (
+                  <div style={{ padding: "20px", background: "#f8fafc", borderRadius: 8, border: "1px solid #e2e8f0" }}>
+                    <div style={{ fontSize: 15, fontWeight: 600, color: "#475569" }}>Not found in ClinVar</div>
+                    <div style={{ fontSize: 13, color: "#94a3b8", marginTop: 4 }}>
+                      This variant has no ClinVar record.
+                      {result.clinvar?.same_gene_count
+                        ? ` ${result.clinvar.same_gene_count} other ${result.protein_name} variants are in ClinVar.`
+                        : ""}
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    {result.clinvar.exact_match && (
+                      <div
+                        style={{
+                          padding: "20px", borderRadius: 8, border: "1px solid #e2e8f0", marginBottom: 16,
+                          background: result.clinvar.exact_match.significance.toLowerCase().includes("pathogenic")
+                            ? "#fef2f2"
+                            : result.clinvar.exact_match.significance.toLowerCase().includes("benign")
+                              ? "#f0fdf4" : "#fefce8",
+                        }}
+                      >
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                          <div>
+                            <div style={{ fontSize: 18, fontWeight: 700, color: "#0f172a" }}>
+                              {result.clinvar.exact_match.significance}
+                            </div>
+                            <div style={{ fontSize: 13, color: "#64748b", marginTop: 4 }}>
+                              {result.clinvar.exact_match.review_status}
+                            </div>
+                            {result.clinvar.exact_match.traits.length > 0 && (
+                              <div style={{ fontSize: 14, color: "#475569", marginTop: 8 }}>
+                                Condition: {result.clinvar.exact_match.traits.join(", ")}
+                              </div>
+                            )}
+                            <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 6 }}>
+                              {result.clinvar.exact_match.num_submissions} submission(s)
+                              {result.clinvar.exact_match.last_evaluated &&
+                                ` · Last evaluated: ${result.clinvar.exact_match.last_evaluated.split(" ")[0]}`}
+                            </div>
+                          </div>
+                          <div style={{ textAlign: "right" }}>
+                            <div style={{ fontSize: 22, letterSpacing: 2 }}>
+                              {"★".repeat(result.clinvar.exact_match.stars)}
+                              {"☆".repeat(4 - result.clinvar.exact_match.stars)}
+                            </div>
+                            <a
+                              href={result.clinvar.exact_match.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              style={{ fontSize: 13, color: "#3b82f6", display: "flex", alignItems: "center", gap: 4, justifyContent: "flex-end", marginTop: 4 }}
+                            >
+                              View in ClinVar <ExternalLink size={12} />
+                            </a>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                    {result.clinvar.same_position.length > 0 && (
+                      <div>
+                        <div style={{ fontSize: 14, fontWeight: 600, color: "#475569", marginBottom: 10 }}>
+                          Other variants at this position
+                        </div>
+                        {result.clinvar.same_position.map((v, i) => (
+                          <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", borderBottom: "1px solid #f1f5f9" }}>
+                            <span style={{ fontFamily: "monospace", fontWeight: 600, fontSize: 14 }}>{v.protein_change}</span>
+                            <span style={{ fontSize: 13, color: "#64748b" }}>{v.significance || "No classification"}</span>
+                            <a href={v.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: "#3b82f6", display: "flex", alignItems: "center", gap: 2 }}>
+                              View <ExternalLink size={11} />
+                            </a>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {result.clinvar.same_gene_count > 0 && (
+                      <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 12 }}>
+                        {result.clinvar.same_gene_count} total {result.protein_name} variants in ClinVar
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+
+            {/* Position tab */}
+            {activeTab === "position" && (
+              <div>
+                <div style={{ fontSize: 14, color: "#475569", marginBottom: 16 }}>
+                  {result.position_context.total_variants} possible substitutions at position {result.position} &middot;
+                  This variant ranks <strong>#{result.position_context.rank}</strong> of {result.position_context.total_variants}
+                </div>
+                <ResponsiveContainer width="100%" height={220}>
+                  <BarChart data={result.position_context.variants} margin={{ left: 10, right: 10 }}>
+                    <XAxis dataKey="mut" tick={{ fontSize: 12, fontFamily: "monospace" }} />
+                    <YAxis tick={{ fontSize: 11 }} domain={["auto", "auto"]} />
+                    <Tooltip
+                      content={({ active, payload }) => {
+                        if (!active || !payload?.length) return null;
+                        const d = payload[0].payload;
+                        return (
+                          <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 6, padding: 8, fontSize: 13 }}>
+                            <div style={{ fontWeight: 600 }}>{d.variant}</div>
+                            <div>Score: {d.score.toFixed(4)}</div>
+                          </div>
+                        );
+                      }}
+                    />
+                    <ReferenceLine y={result.score} stroke={result.color} strokeDasharray="4 4" />
+                    <Bar dataKey="score" radius={[3, 3, 0, 0]}>
+                      {result.position_context.variants.map((v, i) => (
+                        <Cell key={i} fill={v.variant === result.variant ? result.color : "#cbd5e1"} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+                <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 16 }}>
+                  <thead>
+                    <tr style={{ borderBottom: "2px solid #e2e8f0" }}>
+                      <th style={thStyle}>Variant</th>
+                      <th style={thStyle}>Substitution</th>
+                      <th style={thStyle}>Score</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {result.position_context.variants.map((v) => (
+                      <tr
+                        key={v.variant}
+                        style={{
+                          borderBottom: "1px solid #f1f5f9",
+                          background: v.variant === result.variant ? `${result.color}08` : "transparent",
+                          fontWeight: v.variant === result.variant ? 700 : 400,
+                        }}
+                      >
+                        <td style={tdStyle}>
+                          <span style={{ fontFamily: "monospace" }}>{v.variant}</span>
+                          {v.variant === result.variant && <span style={{ color: result.color, fontSize: 12, marginLeft: 6 }}>current</span>}
+                        </td>
+                        <td style={tdStyle}>{result.wt} → {v.mut}</td>
+                        <td style={{ ...tdStyle, fontFamily: "monospace" }}>{v.score.toFixed(4)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* AI Assistant tab */}
+            {activeTab === "ai" && (
+              <div>
+                {/* Quick prompts */}
+                {chatMessages.length === 0 && (
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
+                    {[
+                      `Why is ${result.variant} classified as ${result.classification}?`,
+                      "Generate a clinical report for this variant",
+                      "What is the clinical significance of this position?",
+                      "Compare with the most damaging substitution at this position",
+                    ].map((prompt) => (
+                      <button
+                        key={prompt}
+                        onClick={() => sendChat(prompt)}
+                        style={{
+                          padding: "8px 14px", borderRadius: 20, border: "1px solid #e2e8f0",
+                          background: "#f8fafc", fontSize: 13, color: "#475569", cursor: "pointer", textAlign: "left",
+                        }}
+                      >
+                        {prompt}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {/* Chat messages */}
+                {chatMessages.length > 0 && (
+                  <div style={{ maxHeight: 400, overflow: "auto", marginBottom: 12, padding: "0 4px" }}>
+                    {chatMessages.map((msg, i) => (
+                      <div key={i} style={{ display: "flex", gap: 10, marginBottom: 14, alignItems: "flex-start" }}>
+                        <div
+                          style={{
+                            width: 28, height: 28, borderRadius: 6,
+                            background: msg.role === "user" ? "#3b82f6" : "#0f172a",
+                            display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+                          }}
+                        >
+                          {msg.role === "user" ? <User size={14} color="#fff" /> : <Bot size={14} color="#38bdf8" />}
+                        </div>
+                        <div style={{ fontSize: 14, lineHeight: 1.7, color: "#1e293b", whiteSpace: "pre-wrap", flex: 1 }}>
+                          {msg.content}
+                        </div>
+                      </div>
+                    ))}
+                    {chatLoading && (
+                      <div style={{ display: "flex", gap: 10, alignItems: "center", color: "#94a3b8" }}>
+                        <Bot size={18} /> <span style={{ fontSize: 14 }}>Thinking...</span>
+                      </div>
+                    )}
+                    <div ref={chatEndRef} />
+                  </div>
+                )}
+
+                {/* Input */}
+                <div style={{ display: "flex", gap: 8 }}>
+                  <input
+                    value={chatInput}
+                    onChange={(e) => setChatInput(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && sendChat()}
+                    placeholder="Ask about this variant..."
+                    style={{ flex: 1, padding: "10px 14px", borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 14, outline: "none" }}
+                  />
+                  <button
+                    onClick={() => sendChat()}
+                    disabled={chatLoading || !chatInput.trim()}
+                    style={{
+                      padding: "10px 16px", borderRadius: 8, border: "none", background: "#0f172a",
+                      color: "#fff", cursor: "pointer", opacity: chatLoading || !chatInput.trim() ? 0.4 : 1,
+                    }}
+                  >
+                    <Send size={16} />
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </>
       )}
@@ -665,23 +589,18 @@ export default function Predict() {
             Enter a variant to begin
           </h3>
           <p style={{ fontSize: 14, color: "#94a3b8", maxWidth: 400, margin: "0 auto", lineHeight: 1.6 }}>
-            Type a variant name like <strong style={{ fontFamily: "monospace" }}>L117H</strong> or <strong style={{ fontFamily: "monospace" }}>M1A</strong> to
-            see its predicted functional impact, classification, and supporting evidence.
+            Type a variant name like <strong style={{ fontFamily: "monospace" }}>L117H</strong> or{" "}
+            <strong style={{ fontFamily: "monospace" }}>M1A</strong> to see its predicted functional impact,
+            classification, and supporting evidence.
           </p>
           <div style={{ marginTop: 20, display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
             {["M1A", "L117H", "R230W", "G50D"].map((ex) => (
               <button
                 key={ex}
-                onClick={() => { setQuery(ex); }}
+                onClick={() => setQuery(ex)}
                 style={{
-                  padding: "6px 14px",
-                  borderRadius: 20,
-                  border: "1px solid #e2e8f0",
-                  background: "#f8fafc",
-                  fontSize: 13,
-                  fontFamily: "monospace",
-                  cursor: "pointer",
-                  color: "#475569",
+                  padding: "6px 14px", borderRadius: 20, border: "1px solid #e2e8f0",
+                  background: "#f8fafc", fontSize: 13, fontFamily: "monospace", cursor: "pointer", color: "#475569",
                 }}
               >
                 {ex}
@@ -695,15 +614,8 @@ export default function Predict() {
 }
 
 const thStyle: React.CSSProperties = {
-  textAlign: "left",
-  padding: "8px 12px",
-  fontSize: 12,
-  color: "#64748b",
-  fontWeight: 600,
+  textAlign: "left", padding: "8px 12px", fontSize: 12, color: "#64748b", fontWeight: 600,
 };
-
 const tdStyle: React.CSSProperties = {
-  padding: "8px 12px",
-  fontSize: 13,
-  color: "#1e293b",
+  padding: "8px 12px", fontSize: 13, color: "#1e293b",
 };
