@@ -48,6 +48,22 @@ interface LookupResult {
     rank: number;
     variants: PositionVariant[];
   };
+  clinvar?: {
+    found: boolean;
+    exact_match: {
+      accession: string;
+      protein_change: string;
+      significance: string;
+      review_status: string;
+      stars: number;
+      traits: string[];
+      num_submissions: number;
+      url: string;
+      last_evaluated: string;
+    } | null;
+    same_position: any[];
+    same_gene_count: number;
+  };
 }
 
 const IMPACT_COLORS = { damaging: "#dc2626", moderate: "#ca8a04", benign: "#16a34a" };
@@ -317,6 +333,112 @@ export default function Predict() {
                 </div>
               ))}
             </div>
+          </div>
+
+          {/* ClinVar */}
+          <div style={{ ...card, marginBottom: 20 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
+              <h3 style={{ fontSize: 16, fontWeight: 600, margin: 0 }}>ClinVar</h3>
+              <span style={{ fontSize: 12, color: "#94a3b8" }}>Clinical variant database</span>
+            </div>
+
+            {!result.clinvar || !result.clinvar.found ? (
+              <div style={{ padding: "16px 20px", background: "#f8fafc", borderRadius: 8, border: "1px solid #e2e8f0" }}>
+                <div style={{ fontSize: 14, fontWeight: 600, color: "#475569" }}>
+                  Not found in ClinVar
+                </div>
+                <div style={{ fontSize: 13, color: "#94a3b8", marginTop: 4 }}>
+                  This variant has no ClinVar record. {result.clinvar?.same_gene_count
+                    ? `${result.clinvar.same_gene_count} other ${result.protein_name} variants are in ClinVar.`
+                    : ""}
+                </div>
+              </div>
+            ) : (
+              <div>
+                {/* Exact match */}
+                {result.clinvar.exact_match && (
+                  <div style={{
+                    padding: "16px 20px",
+                    borderRadius: 8,
+                    border: "1px solid #e2e8f0",
+                    background: result.clinvar.exact_match.significance.toLowerCase().includes("pathogenic")
+                      ? "#fef2f2"
+                      : result.clinvar.exact_match.significance.toLowerCase().includes("benign")
+                        ? "#f0fdf4"
+                        : "#fefce8",
+                    marginBottom: 12,
+                  }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                      <div>
+                        <div style={{ fontSize: 15, fontWeight: 700, color: "#0f172a" }}>
+                          {result.clinvar.exact_match.significance}
+                        </div>
+                        <div style={{ fontSize: 13, color: "#64748b", marginTop: 4 }}>
+                          {result.clinvar.exact_match.review_status}
+                        </div>
+                        {result.clinvar.exact_match.traits.length > 0 && (
+                          <div style={{ fontSize: 13, color: "#475569", marginTop: 6 }}>
+                            Condition: {result.clinvar.exact_match.traits.join(", ")}
+                          </div>
+                        )}
+                        <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 4 }}>
+                          {result.clinvar.exact_match.num_submissions} submission(s)
+                          {result.clinvar.exact_match.last_evaluated && ` · Last evaluated: ${result.clinvar.exact_match.last_evaluated.split(" ")[0]}`}
+                        </div>
+                      </div>
+                      <div style={{ textAlign: "right" }}>
+                        <div style={{ fontSize: 20, letterSpacing: 2 }}>
+                          {"★".repeat(result.clinvar.exact_match.stars)}
+                          {"☆".repeat(4 - result.clinvar.exact_match.stars)}
+                        </div>
+                        <a
+                          href={result.clinvar.exact_match.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{ fontSize: 12, color: "#3b82f6" }}
+                        >
+                          {result.clinvar.exact_match.accession} →
+                        </a>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Same position variants */}
+                {result.clinvar.same_position.length > 0 && (
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: "#64748b", marginBottom: 8 }}>
+                      Other variants at this position in ClinVar:
+                    </div>
+                    {result.clinvar.same_position.map((v, i) => (
+                      <div
+                        key={i}
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          padding: "8px 12px",
+                          borderBottom: "1px solid #f1f5f9",
+                          fontSize: 13,
+                        }}
+                      >
+                        <span style={{ fontFamily: "monospace", fontWeight: 600 }}>{v.protein_change}</span>
+                        <span style={{ color: "#64748b" }}>{v.significance || "No classification"}</span>
+                        <a href={v.url} target="_blank" rel="noopener noreferrer" style={{ color: "#3b82f6", fontSize: 12 }}>
+                          View →
+                        </a>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Gene stats */}
+                {result.clinvar.same_gene_count > 0 && (
+                  <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 8 }}>
+                    {result.clinvar.same_gene_count} total {result.protein_name} variants in ClinVar
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Position context */}

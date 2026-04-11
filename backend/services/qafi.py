@@ -282,10 +282,18 @@ def lookup_variant(protein_id: str, variant_query: str, method: str = "qafisplit
                 elif neco < -0.5:
                     evidence.append({"feature": "3D Neighborhood", "value": f"neco = {neco:.3f}", "detail": "Surrounding residues are variable — less constrained region", "impact": "benign"})
 
+    # ClinVar lookup
+    from .clinvar import lookup_variant as clinvar_lookup
+    protein_name = features_df.iloc[0]["protein"] if features_df is not None and "protein" in features_df.columns else protein_id
+    try:
+        clinvar_data = clinvar_lookup(protein_name, wt, position, mut)
+    except Exception:
+        clinvar_data = None
+
     return {
         "variant": variant_name,
         "protein_id": protein_id,
-        "protein_name": features_df.iloc[0]["protein"] if features_df is not None and "protein" in features_df.columns else protein_id,
+        "protein_name": protein_name,
         "position": position,
         "wt": wt,
         "mut": mut,
@@ -303,6 +311,7 @@ def lookup_variant(protein_id: str, variant_query: str, method: str = "qafisplit
             "rank": pos_rank,
             "variants": same_pos_list,
         },
+        "clinvar": clinvar_data,
     }
 
 
