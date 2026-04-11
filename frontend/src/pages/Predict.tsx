@@ -64,16 +64,23 @@ interface LookupResult {
     same_position: any[];
     same_gene_count: number;
   };
+  alphamissense?: {
+    available: boolean;
+    variant: { variant: string; am_score: number; am_class: string; am_class_label: string; am_class_color: string } | null;
+    same_position: { variant: string; am_score: number; am_class: string; am_class_label: string; am_class_color: string }[];
+    summary: { total: number; pathogenic: number; benign: number; ambiguous: number } | null;
+  };
 }
 
 const IMPACT_COLORS = { damaging: "#dc2626", moderate: "#ca8a04", benign: "#16a34a" };
 const IMPACT_BG = { damaging: "#fef2f2", moderate: "#fefce8", benign: "#f0fdf4" };
 
-type TabKey = "evidence" | "clinvar" | "position" | "ai";
+type TabKey = "evidence" | "clinvar" | "alphamissense" | "position" | "ai";
 
 const TABS: { key: TabKey; label: string }[] = [
   { key: "evidence", label: "Evidence" },
   { key: "clinvar", label: "ClinVar" },
+  { key: "alphamissense", label: "AlphaMissense" },
   { key: "position", label: "Position" },
   { key: "ai", label: "AI Assistant" },
 ];
@@ -303,15 +310,12 @@ export default function Predict() {
                 }}
               >
                 {tab.label}
-                {/* ClinVar status dot */}
+                {/* Status dots */}
                 {tab.key === "clinvar" && result.clinvar && (
-                  <span
-                    style={{
-                      width: 8, height: 8, borderRadius: "50%",
-                      background: result.clinvar.found ? "#10b981" : "#cbd5e1",
-                      display: "inline-block",
-                    }}
-                  />
+                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: result.clinvar.found ? "#10b981" : "#cbd5e1", display: "inline-block" }} />
+                )}
+                {tab.key === "alphamissense" && result.alphamissense?.variant && (
+                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: result.alphamissense.variant.am_class_color, display: "inline-block" }} />
                 )}
               </button>
             ))}
@@ -432,6 +436,118 @@ export default function Predict() {
                     {result.clinvar.same_gene_count > 0 && (
                       <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 12 }}>
                         {result.clinvar.same_gene_count} total {result.protein_name} variants in ClinVar
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+
+            {/* AlphaMissense tab */}
+            {activeTab === "alphamissense" && (
+              <div>
+                {!result.alphamissense?.available ? (
+                  <div style={{ padding: 20, background: "#f8fafc", borderRadius: 8, border: "1px solid #e2e8f0" }}>
+                    <div style={{ fontSize: 15, fontWeight: 600, color: "#475569" }}>AlphaMissense data not available</div>
+                    <div style={{ fontSize: 13, color: "#94a3b8", marginTop: 4 }}>
+                      No AlphaMissense predictions found for this protein.
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    {/* Main prediction */}
+                    {result.alphamissense.variant && (
+                      <div style={{
+                        display: "flex", justifyContent: "space-between", alignItems: "center",
+                        padding: 20, borderRadius: 8, marginBottom: 16,
+                        background: result.alphamissense.variant.am_class === "LPath" ? "#fef2f2"
+                          : result.alphamissense.variant.am_class === "LBen" ? "#f0fdf4" : "#fefce8",
+                        border: `1px solid ${result.alphamissense.variant.am_class_color}30`,
+                      }}>
+                        <div>
+                          <div style={{ fontSize: 18, fontWeight: 700, color: result.alphamissense.variant.am_class_color }}>
+                            {result.alphamissense.variant.am_class_label}
+                          </div>
+                          <div style={{ fontSize: 13, color: "#64748b", marginTop: 4 }}>
+                            AlphaMissense prediction (Google DeepMind)
+                          </div>
+                        </div>
+                        <div style={{ textAlign: "right" }}>
+                          <div style={{ fontSize: 32, fontWeight: 700, fontFamily: "monospace", color: result.alphamissense.variant.am_class_color }}>
+                            {result.alphamissense.variant.am_score.toFixed(2)}
+                          </div>
+                          <div style={{ fontSize: 11, color: "#94a3b8" }}>
+                            0 = benign · 1 = pathogenic
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* QAFI vs AlphaMissense comparison */}
+                    {result.alphamissense.variant && (
+                      <div style={{ padding: 16, background: "#f8fafc", borderRadius: 8, border: "1px solid #e2e8f0", marginBottom: 16 }}>
+                        <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>QAFI vs AlphaMissense</div>
+                        <div style={{ display: "flex", gap: 24 }}>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 4 }}>QAFI</div>
+                            <div style={{ fontSize: 16, fontWeight: 700, color: result.color }}>{result.classification}</div>
+                            <div style={{ fontSize: 13, fontFamily: "monospace" }}>Score: {result.score.toFixed(4)}</div>
+                          </div>
+                          <div style={{ width: 1, background: "#e2e8f0" }} />
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontSize: 12, color: "#94a3b8", marginBottom: 4 }}>AlphaMissense</div>
+                            <div style={{ fontSize: 16, fontWeight: 700, color: result.alphamissense.variant.am_class_color }}>
+                              {result.alphamissense.variant.am_class_label}
+                            </div>
+                            <div style={{ fontSize: 13, fontFamily: "monospace" }}>Score: {result.alphamissense.variant.am_score.toFixed(4)}</div>
+                          </div>
+                        </div>
+                        {result.classification !== result.alphamissense.variant.am_class_label && (
+                          <div style={{ marginTop: 10, padding: "8px 12px", background: "#fefce8", borderRadius: 6, fontSize: 13, color: "#854d0e" }}>
+                            Note: QAFI and AlphaMissense disagree on this variant. Consider additional evidence.
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Same position variants */}
+                    {result.alphamissense.same_position.length > 0 && (
+                      <div>
+                        <div style={{ fontSize: 14, fontWeight: 600, color: "#475569", marginBottom: 10 }}>
+                          All substitutions at position {result.position}
+                        </div>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                          {result.alphamissense.same_position.map((v) => (
+                            <div
+                              key={v.variant}
+                              style={{
+                                padding: "6px 12px", borderRadius: 6, fontSize: 13, fontFamily: "monospace",
+                                background: v.variant === result.variant ? `${v.am_class_color}20` : "#f8fafc",
+                                border: v.variant === result.variant ? `2px solid ${v.am_class_color}` : "1px solid #e2e8f0",
+                                fontWeight: v.variant === result.variant ? 700 : 400,
+                              }}
+                            >
+                              <span style={{ color: v.am_class_color }}>{v.am_score.toFixed(2)}</span>
+                              {" "}{v.variant.slice(-1)}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Summary */}
+                    {result.alphamissense.summary && (
+                      <div style={{ display: "flex", gap: 16, marginTop: 16 }}>
+                        {[
+                          { label: "Likely Pathogenic", count: result.alphamissense.summary.pathogenic, color: "#dc2626" },
+                          { label: "Ambiguous", count: result.alphamissense.summary.ambiguous, color: "#ca8a04" },
+                          { label: "Likely Benign", count: result.alphamissense.summary.benign, color: "#16a34a" },
+                        ].map((s) => (
+                          <div key={s.label} style={{ flex: 1, padding: 10, background: "#f8fafc", borderRadius: 6, textAlign: "center" }}>
+                            <div style={{ fontSize: 18, fontWeight: 700, color: s.color }}>{s.count}</div>
+                            <div style={{ fontSize: 11, color: "#94a3b8" }}>{s.label}</div>
+                          </div>
+                        ))}
                       </div>
                     )}
                   </>
