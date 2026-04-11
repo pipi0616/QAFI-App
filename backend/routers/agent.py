@@ -1,6 +1,12 @@
 """
-Agent Router — Claude-powered clinical variant interpretation assistant.
-Designed to be embedded alongside variant lookup results.
+Agent Router — Claude-powered clinical variant interpretation.
+
+Core endpoint: /api/agent/assess
+  Takes ALL evidence (QAFI, ClinVar, AlphaMissense, gnomAD, Literature)
+  and returns a synthesized clinical assessment.
+
+Secondary endpoint: /api/agent/chat
+  Follow-up questions about the assessment.
 """
 
 import json
@@ -15,193 +21,248 @@ from ..services import qafi
 router = APIRouter(prefix="/api/agent", tags=["agent"])
 
 
-AGENT_TOOLS = [
-    {
-        "name": "lookup_variant",
-        "description": "Look up prediction data for a specific variant. Returns score, classification, evidence, and position context.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "protein_id": {"type": "string", "description": "UniProt protein ID"},
-                "variant": {"type": "string", "description": "Variant name, e.g. 'L117H'"},
-            },
-            "required": ["protein_id", "variant"],
-        },
-    },
-    {
-        "name": "compare_variants",
-        "description": "Compare multiple variants by looking up each one. Use this when the user asks to compare or prioritize several variants.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "protein_id": {"type": "string"},
-                "variants": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "List of variant names, e.g. ['M1A', 'L117H', 'R230W']",
-                },
-            },
-            "required": ["protein_id", "variants"],
-        },
-    },
-    {
-        "name": "get_position_summary",
-        "description": "Get all variants at a given position to understand position-level impact.",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "protein_id": {"type": "string"},
-                "position": {"type": "integer"},
-            },
-            "required": ["protein_id", "position"],
-        },
-    },
-]
+ASSESS_SYSTEM = """You are a clinical genetics expert assistant. You have been given ALL available evidence about a protein variant. Your job is to synthesize it into a clear clinical assessment.
 
-
-def execute_agent_tool(name: str, inputs: dict) -> str:
-    if name == "lookup_variant":
-        result = qafi.lookup_variant(inputs["protein_id"], inputs["variant"])
-        if result is None:
-            return json.dumps({"error": f"Variant {inputs['variant']} not found"})
-        return json.dumps(result)
-
-    elif name == "compare_variants":
-        results = []
-        for v in inputs["variants"]:
-            r = qafi.lookup_variant(inputs["protein_id"], v)
-            if r:
-                results.append({
-                    "variant": r["variant"],
-                    "score": r["score"],
-                    "percentile": r["percentile"],
-                    "classification": r["classification"],
-                    "evidence_summary": [f"{e['feature']}: {e['value']} ({e['impact']})" for e in r["evidence"]],
-                })
-            else:
-                results.append({"variant": v, "error": "not found"})
-        return json.dumps(results)
-
-    elif name == "get_position_summary":
-        result = qafi.lookup_variant(inputs["protein_id"], str(inputs["position"]))
-        if result is None:
-            return json.dumps({"error": f"Position {inputs['position']} not found"})
-        return json.dumps({
-            "position": result["position"],
-            "wt": result["wt"],
-            "total_variants": result["position_context"]["total_variants"],
-            "mean_score": result["position_context"]["mean_score"],
-            "variants": result["position_context"]["variants"],
-            "evidence": result["evidence"],
-        })
-
-    return json.dumps({"error": f"Unknown tool: {name}"})
-
-
-def build_system_prompt(variant_context: dict | None) -> str:
-    """Build system prompt with current variant context embedded."""
-    base = """You are a clinical genetics AI assistant embedded in the QAFI variant analysis platform.
-You help clinicians interpret variant predictions and make clinical decisions.
-
-Your capabilities:
-- Explain why a variant is classified as Pathogenic/VUS/Benign in plain clinical language
-- Generate clinical report text suitable for medical records
-- Compare multiple variants and prioritize them
-- Explain the molecular and evolutionary evidence behind predictions
-- Answer questions about protein function, variant impact, and clinical significance
+You MUST respond in valid JSON with this exact structure:
+{
+  "classification": "Likely Pathogenic | Possibly Pathogenic | Uncertain Significance (VUS) | Possibly Benign | Likely Benign",
+  "confidence": "High | Moderate | Low",
+  "summary": "2-3 sentence plain-language summary for a clinician",
+  "evidence_for_pathogenic": ["bullet point 1", "bullet point 2", ...],
+  "evidence_for_benign": ["bullet point 1", "bullet point 2", ...],
+  "evidence_uncertain": ["bullet point 1", ...],
+  "acmg_criteria": ["PM2", "BP4", ...],
+  "recommendation": "1-2 sentence clinical recommendation",
+  "report": "A formal 1-paragraph clinical report suitable for medical records"
+}
 
 Guidelines:
-- Use clear, clinical language. Avoid jargon unless asked.
-- Always state uncertainty honestly — say "predicted" not "is pathogenic"
-- When generating reports, use formal clinical genetics terminology
-- Respond in the same language as the user (Chinese or English)
-- Be concise but thorough. Clinicians are busy."""
-
-    if variant_context:
-        ctx = f"""
-
-CURRENT VARIANT CONTEXT (the variant the clinician is currently looking at):
-- Variant: {variant_context.get('variant', 'N/A')}
-- Protein: {variant_context.get('protein_name', '')} ({variant_context.get('protein_id', '')})
-- Position: {variant_context.get('position', '')}
-- Wild type: {variant_context.get('wt', '')} → Mutant: {variant_context.get('mut', '')}
-- QAFI Score: {variant_context.get('score', '')} (range: {variant_context.get('score_range', {}).get('min', '')}-{variant_context.get('score_range', {}).get('max', '')})
-- Percentile: {variant_context.get('percentile', '')}%
-- Classification: {variant_context.get('classification', '')}
-- Confidence: {variant_context.get('confidence', '')}
-
-Evidence:"""
-        for e in variant_context.get("evidence", []):
-            ctx += f"\n- {e['feature']}: {e['value']} — {e['detail']} [{e['impact']}]"
-
-        pos_ctx = variant_context.get("position_context", {})
-        ctx += f"""
-
-Position context:
-- {pos_ctx.get('total_variants', '?')} substitutions at position {variant_context.get('position', '')}
-- This variant ranks #{pos_ctx.get('rank', '?')} of {pos_ctx.get('total_variants', '?')}
-- Mean score at this position: {pos_ctx.get('mean_score', '?')}
-
-Use this context to answer the user's questions. You do NOT need to call lookup_variant for this variant — you already have all the data."""
-        base += ctx
-
-    return base
+- Weigh all evidence sources. Note agreements AND conflicts between predictors.
+- Use ACMG/AMP criteria codes where applicable (PVS1, PS1-4, PM1-6, PP1-5, BA1, BS1-4, BP1-7).
+- gnomAD absence = PM2. Common variant (>5%) = BA1.
+- If predictors disagree, explain why and which is more reliable for this case.
+- The report should use formal clinical genetics terminology.
+- Be honest about uncertainty. Never overstate confidence.
+- Respond in the same language as the user's query language. If no query, use English."""
 
 
-class ChatRequest(BaseModel):
-    messages: list[dict]
-    variant_context: dict | None = None  # current variant data from frontend
+def _build_evidence_prompt(variant_data: dict) -> str:
+    """Build a structured evidence summary for the LLM."""
+    lines = []
+    lines.append(f"VARIANT: {variant_data.get('variant', 'N/A')}")
+    lines.append(f"PROTEIN: {variant_data.get('protein_name', '')} ({variant_data.get('protein_id', '')})")
+    lines.append(f"POSITION: {variant_data.get('position', '')}")
+    lines.append(f"SUBSTITUTION: {variant_data.get('wt', '')} → {variant_data.get('mut', '')}")
+    lines.append("")
+
+    # QAFI
+    lines.append("=== QAFI PREDICTION ===")
+    lines.append(f"Score: {variant_data.get('score', 'N/A')}")
+    lines.append(f"Percentile: {variant_data.get('percentile', 'N/A')}%")
+    lines.append(f"Score range: {variant_data.get('score_range', {}).get('min', '')} - {variant_data.get('score_range', {}).get('max', '')}")
+    lines.append(f"Preliminary classification: {variant_data.get('classification', 'N/A')}")
+    lines.append("")
+
+    # Feature evidence
+    lines.append("=== MOLECULAR FEATURES ===")
+    for e in variant_data.get("evidence", []):
+        lines.append(f"- {e['feature']}: {e['value']} — {e['detail']} [{e['impact']}]")
+    lines.append("")
+
+    # Position context
+    pos = variant_data.get("position_context", {})
+    lines.append(f"=== POSITION CONTEXT ===")
+    lines.append(f"Total substitutions at this position: {pos.get('total_variants', '?')}")
+    lines.append(f"This variant ranks #{pos.get('rank', '?')} of {pos.get('total_variants', '?')}")
+    lines.append(f"Mean score at position: {pos.get('mean_score', '?')}")
+    lines.append("")
+
+    # ClinVar
+    cv = variant_data.get("clinvar", {})
+    lines.append("=== CLINVAR ===")
+    if cv and cv.get("found"):
+        em = cv.get("exact_match")
+        if em:
+            lines.append(f"Exact match: {em['significance']} ({em['stars']} stars, {em['num_submissions']} submissions)")
+            if em.get("traits"):
+                lines.append(f"Associated conditions: {', '.join(em['traits'])}")
+        sp = cv.get("same_position", [])
+        if sp:
+            lines.append(f"Other variants at this position: {', '.join(v['protein_change'] + '=' + v['significance'] for v in sp[:5])}")
+    else:
+        lines.append(f"Not found in ClinVar. {cv.get('same_gene_count', 0)} gene variants total in ClinVar.")
+    lines.append("")
+
+    # AlphaMissense
+    am = variant_data.get("alphamissense", {})
+    lines.append("=== ALPHAMISSENSE ===")
+    if am and am.get("available") and am.get("variant"):
+        v = am["variant"]
+        lines.append(f"Score: {v['am_score']} — Classification: {v['am_class_label']}")
+        summary = am.get("summary", {})
+        if summary:
+            lines.append(f"Protein-wide: {summary['pathogenic']} pathogenic, {summary['ambiguous']} ambiguous, {summary['benign']} benign out of {summary['total']}")
+    else:
+        lines.append("Not available")
+    lines.append("")
+
+    # gnomAD
+    gn = variant_data.get("gnomad", {})
+    lines.append("=== gnomAD (POPULATION FREQUENCY) ===")
+    if gn and gn.get("available") and gn.get("variant"):
+        v = gn["variant"]
+        lines.append(f"Allele frequency: {v['allele_freq']}")
+        lines.append(f"Allele count: {v['allele_count']}, Homozygotes: {v['homozygote_count']}")
+        lines.append(f"Interpretation: {v['freq_interpretation']}")
+        lines.append(f"Gene missense variants in gnomAD: {gn.get('gene_missense_count', '?')}")
+    else:
+        lines.append("Not available")
+    lines.append("")
+
+    # Literature
+    lit = variant_data.get("literature", {})
+    lines.append("=== LITERATURE ===")
+    lines.append(f"Variant-specific papers: {lit.get('variant_search_count', 0)}")
+    lines.append(f"Gene clinical papers: {lit.get('gene_search_count', 0)}")
+    lines.append(f"Total gene papers: {lit.get('total_gene_papers', 0)}")
+    if lit.get("variant_articles"):
+        for a in lit["variant_articles"][:3]:
+            lines.append(f"  - {a['title'][:100]} ({a['year']}, PMID:{a['pmid']})")
+    if lit.get("gene_articles"):
+        lines.append("Key gene papers:")
+        for a in lit["gene_articles"][:3]:
+            lines.append(f"  - {a['title'][:100]} ({a['year']}, PMID:{a['pmid']})")
+
+    return "\n".join(lines)
 
 
-class ChatResponse(BaseModel):
-    reply: str
-    tool_calls: list[dict] = []
+class AssessRequest(BaseModel):
+    variant_data: dict  # full lookup result from /api/predict/lookup
+    language: str = "en"  # "en" or "zh"
 
 
-@router.post("/chat", response_model=ChatResponse)
-def agent_chat(req: ChatRequest):
-    """Chat with the variant interpretation agent."""
+class AssessResponse(BaseModel):
+    classification: str
+    confidence: str
+    summary: str
+    evidence_for_pathogenic: list[str]
+    evidence_for_benign: list[str]
+    evidence_uncertain: list[str]
+    acmg_criteria: list[str]
+    recommendation: str
+    report: str
+
+
+@router.post("/assess")
+def assess_variant(req: AssessRequest):
+    """The core agentic endpoint: synthesize all evidence into a clinical assessment."""
     try:
         client = anthropic.Anthropic()
     except Exception:
         raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY not set")
 
-    system_prompt = build_system_prompt(req.variant_context)
-    messages = req.messages
-    tool_calls_log = []
+    evidence_text = _build_evidence_prompt(req.variant_data)
 
-    for _ in range(10):
-        for attempt in range(3):
-            try:
-                response = client.messages.create(
-                    model="claude-sonnet-4-20250514",
-                    max_tokens=4096,
-                    system=system_prompt,
-                    tools=AGENT_TOOLS,
-                    messages=messages,
-                )
-                break
-            except anthropic._exceptions.OverloadedError:
-                time.sleep(2 ** attempt)
-        else:
-            raise HTTPException(status_code=503, detail="Claude API overloaded")
+    lang_hint = "Respond in Chinese (中文)." if req.language == "zh" else "Respond in English."
 
-        text_parts = []
-        tool_results = []
+    messages = [
+        {
+            "role": "user",
+            "content": f"Please assess this variant based on ALL the evidence below. {lang_hint}\n\n{evidence_text}",
+        }
+    ]
 
-        for block in response.content:
-            if block.type == "text":
-                text_parts.append(block.text)
-            elif block.type == "tool_use":
-                result = execute_agent_tool(block.name, block.input)
-                tool_calls_log.append({"tool": block.name, "input": block.input, "output": result[:500]})
-                tool_results.append({"type": "tool_result", "tool_use_id": block.id, "content": result})
+    for attempt in range(3):
+        try:
+            response = client.messages.create(
+                model="claude-sonnet-4-20250514",
+                max_tokens=4096,
+                system=ASSESS_SYSTEM,
+                messages=messages,
+            )
+            break
+        except anthropic._exceptions.OverloadedError:
+            time.sleep(2 ** attempt)
+    else:
+        raise HTTPException(status_code=503, detail="Claude API overloaded")
 
-        messages.append({"role": "assistant", "content": response.content})
+    # Parse JSON from response
+    reply = ""
+    for block in response.content:
+        if hasattr(block, "text"):
+            reply += block.text
 
-        if response.stop_reason == "tool_use":
-            messages.append({"role": "user", "content": tool_results})
-        else:
-            return ChatResponse(reply="".join(text_parts), tool_calls=tool_calls_log)
+    # Extract JSON from response (handle markdown code blocks)
+    json_str = reply.strip()
+    if json_str.startswith("```"):
+        json_str = json_str.split("\n", 1)[1]  # remove ```json
+        json_str = json_str.rsplit("```", 1)[0]  # remove trailing ```
 
-    return ChatResponse(reply="Agent reached maximum iterations.", tool_calls=tool_calls_log)
+    try:
+        result = json.loads(json_str)
+    except json.JSONDecodeError:
+        # Fallback: return raw text as summary
+        result = {
+            "classification": "Unable to parse",
+            "confidence": "Low",
+            "summary": reply[:500],
+            "evidence_for_pathogenic": [],
+            "evidence_for_benign": [],
+            "evidence_uncertain": [],
+            "acmg_criteria": [],
+            "recommendation": "Please try again.",
+            "report": reply[:1000],
+        }
+
+    return result
+
+
+# --- Follow-up chat (keeps context) ---
+
+class ChatRequest(BaseModel):
+    messages: list[dict]
+    variant_data: dict | None = None
+
+
+class ChatResponse(BaseModel):
+    reply: str
+
+
+CHAT_SYSTEM = """You are a clinical genetics AI assistant. You have already provided an initial assessment of a variant.
+Now the clinician has follow-up questions. Answer based on the variant evidence you were given.
+Be concise, clinical, and honest about uncertainty.
+Respond in the same language as the user."""
+
+
+@router.post("/chat", response_model=ChatResponse)
+def agent_chat(req: ChatRequest):
+    """Follow-up chat about a variant assessment."""
+    try:
+        client = anthropic.Anthropic()
+    except Exception:
+        raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY not set")
+
+    system = CHAT_SYSTEM
+    if req.variant_data:
+        system += "\n\nVariant context:\n" + _build_evidence_prompt(req.variant_data)
+
+    for attempt in range(3):
+        try:
+            response = client.messages.create(
+                model="claude-sonnet-4-20250514",
+                max_tokens=4096,
+                system=system,
+                messages=req.messages,
+            )
+            break
+        except anthropic._exceptions.OverloadedError:
+            time.sleep(2 ** attempt)
+    else:
+        raise HTTPException(status_code=503, detail="Claude API overloaded")
+
+    reply = ""
+    for block in response.content:
+        if hasattr(block, "text"):
+            reply += block.text
+
+    return ChatResponse(reply=reply)

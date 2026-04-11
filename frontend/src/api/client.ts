@@ -29,9 +29,14 @@ export const api = {
   getFeatureImportance: () => request<any>("/analysis/feature-importance"),
 
   // Agent
-  chat: (messages: { role: string; content: string }[], variantContext?: any) =>
-    request<{ reply: string; tool_calls: any[] }>("/agent/chat", {
+  assess: (variantData: any, language?: string) =>
+    request<any>("/agent/assess", {
       method: "POST",
-      body: JSON.stringify({ messages, variant_context: variantContext ?? null }),
+      body: JSON.stringify({ variant_data: variantData, language: language ?? "en" }),
+    }),
+  chat: (messages: { role: string; content: string }[], variantData?: any) =>
+    request<{ reply: string }>("/agent/chat", {
+      method: "POST",
+      body: JSON.stringify({ messages, variant_data: variantData ?? null }),
     }),
 };
