@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { api } from "../api/client";
-import { Search, AlertTriangle, CheckCircle, HelpCircle, ChevronDown, ChevronUp } from "lucide-react";
+import { Search, AlertTriangle, CheckCircle, HelpCircle, ChevronDown, ChevronUp, Bot, Send, User } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
   Cell, ReferenceLine,
@@ -62,12 +62,51 @@ export default function Predict() {
   const [error, setError] = useState("");
   const [showAllPos, setShowAllPos] = useState(false);
 
+  // AI Chat state
+  const [chatMessages, setChatMessages] = useState<{ role: "user" | "assistant"; content: string }[]>([]);
+  const [chatInput, setChatInput] = useState("");
+  const [chatLoading, setChatLoading] = useState(false);
+  const chatEndRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     api.getProteins().then((p) => {
       setProteins(p.proteins);
       if (p.proteins.length) setSelectedProtein(p.proteins[0].protein_id);
     });
   }, []);
+
+  // Reset chat when variant changes
+  useEffect(() => {
+    setChatMessages([]);
+    setChatInput("");
+  }, [result?.variant]);
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [chatMessages]);
+
+  const sendChat = async (text?: string) => {
+    const msg = text ?? chatInput.trim();
+    if (!msg || chatLoading) return;
+    const userMsg = { role: "user" as const, content: msg };
+    const newMessages = [...chatMessages, userMsg];
+    setChatMessages(newMessages);
+    setChatInput("");
+    setChatLoading(true);
+    try {
+      const res = await api.chat(
+        newMessages.map((m) => ({ role: m.role, content: m.content })),
+        result,
+      );
+      setChatMessages([...newMessages, { role: "assistant", content: res.reply }]);
+    } catch {
+      setChatMessages([
+        ...newMessages,
+        { role: "assistant", content: "Failed to connect. Make sure ANTHROPIC_API_KEY is set in .env." },
+      ]);
+    }
+    setChatLoading(false);
+  };
 
   const handleSearch = async () => {
     if (!query.trim()) return;
@@ -360,6 +399,138 @@ export default function Predict() {
                 </tbody>
               </table>
             )}
+          </div>
+
+          {/* AI Assistant */}
+          <div style={{ ...card, marginTop: 20, borderTop: "3px solid #0f172a" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
+              <Bot size={20} color="#0f172a" />
+              <h3 style={{ fontSize: 16, fontWeight: 600, margin: 0 }}>
+                Ask AI about this variant
+              </h3>
+            </div>
+
+            {/* Quick prompts */}
+            {chatMessages.length === 0 && (
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
+                {[
+                  `Why is ${result.variant} classified as ${result.classification}?`,
+                  "Generate a clinical report for this variant",
+                  "What is the clinical significance of this position?",
+                  "Compare with the most damaging substitution at this position",
+                ].map((prompt) => (
+                  <button
+                    key={prompt}
+                    onClick={() => sendChat(prompt)}
+                    style={{
+                      padding: "8px 14px",
+                      borderRadius: 20,
+                      border: "1px solid #e2e8f0",
+                      background: "#f8fafc",
+                      fontSize: 13,
+                      color: "#475569",
+                      cursor: "pointer",
+                      textAlign: "left",
+                    }}
+                  >
+                    {prompt}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Chat messages */}
+            {chatMessages.length > 0 && (
+              <div
+                style={{
+                  maxHeight: 400,
+                  overflow: "auto",
+                  marginBottom: 12,
+                  padding: "0 4px",
+                }}
+              >
+                {chatMessages.map((msg, i) => (
+                  <div
+                    key={i}
+                    style={{
+                      display: "flex",
+                      gap: 10,
+                      marginBottom: 14,
+                      alignItems: "flex-start",
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: 28,
+                        height: 28,
+                        borderRadius: 6,
+                        background: msg.role === "user" ? "#3b82f6" : "#0f172a",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        flexShrink: 0,
+                      }}
+                    >
+                      {msg.role === "user" ? (
+                        <User size={14} color="#fff" />
+                      ) : (
+                        <Bot size={14} color="#38bdf8" />
+                      )}
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 14,
+                        lineHeight: 1.7,
+                        color: "#1e293b",
+                        whiteSpace: "pre-wrap",
+                        flex: 1,
+                      }}
+                    >
+                      {msg.content}
+                    </div>
+                  </div>
+                ))}
+                {chatLoading && (
+                  <div style={{ display: "flex", gap: 10, alignItems: "center", color: "#94a3b8" }}>
+                    <Bot size={18} /> <span style={{ fontSize: 14 }}>Thinking...</span>
+                  </div>
+                )}
+                <div ref={chatEndRef} />
+              </div>
+            )}
+
+            {/* Input */}
+            <div style={{ display: "flex", gap: 8 }}>
+              <input
+                value={chatInput}
+                onChange={(e) => setChatInput(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && sendChat()}
+                placeholder="Ask about this variant..."
+                style={{
+                  flex: 1,
+                  padding: "10px 14px",
+                  borderRadius: 8,
+                  border: "1px solid #e2e8f0",
+                  fontSize: 14,
+                  outline: "none",
+                }}
+              />
+              <button
+                onClick={() => sendChat()}
+                disabled={chatLoading || !chatInput.trim()}
+                style={{
+                  padding: "10px 16px",
+                  borderRadius: 8,
+                  border: "none",
+                  background: "#0f172a",
+                  color: "#fff",
+                  cursor: "pointer",
+                  opacity: chatLoading || !chatInput.trim() ? 0.4 : 1,
+                }}
+              >
+                <Send size={16} />
+              </button>
+            </div>
           </div>
         </>
       )}

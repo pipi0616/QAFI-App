@@ -1,11 +1,11 @@
 """
-Agent Router — Claude-powered natural language interface.
+Agent Router — Claude-powered clinical variant interpretation assistant.
+Designed to be embedded alongside variant lookup results.
 """
 
 import json
 import time
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 import anthropic
@@ -14,79 +14,143 @@ from ..services import qafi
 
 router = APIRouter(prefix="/api/agent", tags=["agent"])
 
-SYSTEM_PROMPT = """You are the QAFI Analysis Agent — an AI assistant that helps clinical researchers
-analyze protein variant functional impact using the QAFI machine learning framework.
-
-You have access to tools that can:
-- List available proteins and model methods
-- Run PSP models (per-protein prediction) and QAFI models (cross-protein generalization)
-- Explain feature importance and model interpretability
-
-When a user asks for analysis:
-1. Check what data/proteins are available
-2. Suggest an appropriate workflow
-3. Execute step by step
-4. Summarize results clearly with clinical relevance
-
-Respond in the same language as the user (Chinese or English).
-Focus on clinical interpretation — explain what predictions mean for variant pathogenicity.
-"""
 
 AGENT_TOOLS = [
     {
-        "name": "list_proteins",
-        "description": "List available proteins for analysis.",
-        "input_schema": {"type": "object", "properties": {}},
-    },
-    {
-        "name": "list_methods",
-        "description": "List all available PSP and QAFI prediction methods.",
-        "input_schema": {"type": "object", "properties": {}},
-    },
-    {
-        "name": "run_prediction",
-        "description": "Run a prediction model. model_type: 'psp' or 'qafi'.",
+        "name": "lookup_variant",
+        "description": "Look up prediction data for a specific variant. Returns score, classification, evidence, and position context.",
         "input_schema": {
             "type": "object",
             "properties": {
-                "model_type": {"type": "string", "enum": ["psp", "qafi"]},
-                "method": {"type": "string"},
-                "protein_id": {"type": "string"},
+                "protein_id": {"type": "string", "description": "UniProt protein ID"},
+                "variant": {"type": "string", "description": "Variant name, e.g. 'L117H'"},
             },
-            "required": ["model_type", "method", "protein_id"],
+            "required": ["protein_id", "variant"],
         },
     },
     {
-        "name": "get_feature_info",
-        "description": "Get information about the 23 feature blocks used by QAFI.",
-        "input_schema": {"type": "object", "properties": {}},
+        "name": "compare_variants",
+        "description": "Compare multiple variants by looking up each one. Use this when the user asks to compare or prioritize several variants.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "protein_id": {"type": "string"},
+                "variants": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "List of variant names, e.g. ['M1A', 'L117H', 'R230W']",
+                },
+            },
+            "required": ["protein_id", "variants"],
+        },
+    },
+    {
+        "name": "get_position_summary",
+        "description": "Get all variants at a given position to understand position-level impact.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "protein_id": {"type": "string"},
+                "position": {"type": "integer"},
+            },
+            "required": ["protein_id", "position"],
+        },
     },
 ]
 
 
 def execute_agent_tool(name: str, inputs: dict) -> str:
-    if name == "list_proteins":
-        proteins = qafi.list_proteins()
-        return json.dumps({"proteins": proteins, "count": len(proteins)})
-    elif name == "list_methods":
-        return json.dumps({"psp": qafi.list_psp_methods(), "qafi": qafi.list_qafi_methods()})
-    elif name == "run_prediction":
-        if inputs["model_type"] == "psp":
-            result = qafi.run_psp(inputs["method"])
-        else:
-            result = qafi.run_qafi(inputs["method"], inputs["protein_id"])
-        return json.dumps({"success": result["success"], "output": result["stdout"][:2000]})
-    elif name == "get_feature_info":
+    if name == "lookup_variant":
+        result = qafi.lookup_variant(inputs["protein_id"], inputs["variant"])
+        if result is None:
+            return json.dumps({"error": f"Variant {inputs['variant']} not found"})
+        return json.dumps(result)
+
+    elif name == "compare_variants":
+        results = []
+        for v in inputs["variants"]:
+            r = qafi.lookup_variant(inputs["protein_id"], v)
+            if r:
+                results.append({
+                    "variant": r["variant"],
+                    "score": r["score"],
+                    "percentile": r["percentile"],
+                    "classification": r["classification"],
+                    "evidence_summary": [f"{e['feature']}: {e['value']} ({e['impact']})" for e in r["evidence"]],
+                })
+            else:
+                results.append({"variant": v, "error": "not found"})
+        return json.dumps(results)
+
+    elif name == "get_position_summary":
+        result = qafi.lookup_variant(inputs["protein_id"], str(inputs["position"]))
+        if result is None:
+            return json.dumps({"error": f"Position {inputs['position']} not found"})
         return json.dumps({
-            "categories": ["evolutionary (4)", "structural (2)", "neighborhood (13)", "pdff (8)"],
-            "total": 27,
-            "description": "Features capture sequence conservation, protein structure confidence, 3D neighborhood properties, and position-level distributions.",
+            "position": result["position"],
+            "wt": result["wt"],
+            "total_variants": result["position_context"]["total_variants"],
+            "mean_score": result["position_context"]["mean_score"],
+            "variants": result["position_context"]["variants"],
+            "evidence": result["evidence"],
         })
+
     return json.dumps({"error": f"Unknown tool: {name}"})
 
 
+def build_system_prompt(variant_context: dict | None) -> str:
+    """Build system prompt with current variant context embedded."""
+    base = """You are a clinical genetics AI assistant embedded in the QAFI variant analysis platform.
+You help clinicians interpret variant predictions and make clinical decisions.
+
+Your capabilities:
+- Explain why a variant is classified as Pathogenic/VUS/Benign in plain clinical language
+- Generate clinical report text suitable for medical records
+- Compare multiple variants and prioritize them
+- Explain the molecular and evolutionary evidence behind predictions
+- Answer questions about protein function, variant impact, and clinical significance
+
+Guidelines:
+- Use clear, clinical language. Avoid jargon unless asked.
+- Always state uncertainty honestly — say "predicted" not "is pathogenic"
+- When generating reports, use formal clinical genetics terminology
+- Respond in the same language as the user (Chinese or English)
+- Be concise but thorough. Clinicians are busy."""
+
+    if variant_context:
+        ctx = f"""
+
+CURRENT VARIANT CONTEXT (the variant the clinician is currently looking at):
+- Variant: {variant_context.get('variant', 'N/A')}
+- Protein: {variant_context.get('protein_name', '')} ({variant_context.get('protein_id', '')})
+- Position: {variant_context.get('position', '')}
+- Wild type: {variant_context.get('wt', '')} → Mutant: {variant_context.get('mut', '')}
+- QAFI Score: {variant_context.get('score', '')} (range: {variant_context.get('score_range', {}).get('min', '')}-{variant_context.get('score_range', {}).get('max', '')})
+- Percentile: {variant_context.get('percentile', '')}%
+- Classification: {variant_context.get('classification', '')}
+- Confidence: {variant_context.get('confidence', '')}
+
+Evidence:"""
+        for e in variant_context.get("evidence", []):
+            ctx += f"\n- {e['feature']}: {e['value']} — {e['detail']} [{e['impact']}]"
+
+        pos_ctx = variant_context.get("position_context", {})
+        ctx += f"""
+
+Position context:
+- {pos_ctx.get('total_variants', '?')} substitutions at position {variant_context.get('position', '')}
+- This variant ranks #{pos_ctx.get('rank', '?')} of {pos_ctx.get('total_variants', '?')}
+- Mean score at this position: {pos_ctx.get('mean_score', '?')}
+
+Use this context to answer the user's questions. You do NOT need to call lookup_variant for this variant — you already have all the data."""
+        base += ctx
+
+    return base
+
+
 class ChatRequest(BaseModel):
-    messages: list[dict]  # [{"role": "user", "content": "..."}]
+    messages: list[dict]
+    variant_context: dict | None = None  # current variant data from frontend
 
 
 class ChatResponse(BaseModel):
@@ -96,23 +160,23 @@ class ChatResponse(BaseModel):
 
 @router.post("/chat", response_model=ChatResponse)
 def agent_chat(req: ChatRequest):
-    """Chat with the QAFI agent. Runs full agent loop and returns final response."""
+    """Chat with the variant interpretation agent."""
     try:
         client = anthropic.Anthropic()
     except Exception:
         raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY not set")
 
+    system_prompt = build_system_prompt(req.variant_context)
     messages = req.messages
     tool_calls_log = []
 
-    # Agent loop (max 10 iterations for safety)
     for _ in range(10):
         for attempt in range(3):
             try:
                 response = client.messages.create(
                     model="claude-sonnet-4-20250514",
                     max_tokens=4096,
-                    system=SYSTEM_PROMPT,
+                    system=system_prompt,
                     tools=AGENT_TOOLS,
                     messages=messages,
                 )
