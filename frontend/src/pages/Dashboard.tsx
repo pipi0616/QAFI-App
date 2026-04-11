@@ -12,7 +12,7 @@ const cardStyle: React.CSSProperties = {
 
 export default function Dashboard() {
   const [proteins, setProteins] = useState<any[]>([]);
-  const [methods, setMethods] = useState<{ psp: string[]; qafi: string[] }>({ psp: [], qafi: [] });
+  const [methods, setMethods] = useState<{ qafi: string[] }>({ qafi: [] });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -28,9 +28,9 @@ export default function Dashboard() {
 
   const stats = [
     { icon: Dna, label: "Proteins Available", value: proteins.length, color: "#3b82f6" },
-    { icon: FlaskConical, label: "PSP Methods", value: methods.psp.length, color: "#8b5cf6" },
-    { icon: Activity, label: "QAFI Methods", value: methods.qafi.length, color: "#10b981" },
+    { icon: Activity, label: "QAFI Methods", value: methods.qafi?.length ?? 0, color: "#10b981" },
     { icon: Database, label: "Feature Blocks", value: 23, color: "#f59e0b" },
+    { icon: FlaskConical, label: "Total Features", value: 27, color: "#8b5cf6" },
   ];
 
   return (
@@ -100,41 +100,23 @@ export default function Dashboard() {
         </table>
       </div>
 
-      {/* Methods */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginTop: 20 }}>
-        <div style={cardStyle}>
-          <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 12 }}>PSP Methods (Per-Protein)</h3>
-          {methods.psp.map((m) => (
+      {/* QAFI Methods */}
+      <div style={{ ...cardStyle, marginTop: 20 }}>
+        <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 12 }}>QAFI Prediction Methods</h3>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 12 }}>
+          {(methods.qafi ?? []).map((m) => (
             <div
               key={m}
               style={{
-                padding: "6px 12px",
-                margin: "4px 0",
-                background: "#f1f5f9",
-                borderRadius: 6,
-                fontSize: 13,
-                fontFamily: "monospace",
+                padding: "12px 16px",
+                background: m === "qafisplit3" ? "#f0fdf4" : "#f8fafc",
+                borderRadius: 8,
+                border: m === "qafisplit3" ? "1px solid #86efac" : "1px solid #e2e8f0",
               }}
             >
-              {m}
-            </div>
-          ))}
-        </div>
-        <div style={cardStyle}>
-          <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 12 }}>QAFI Methods (Cross-Protein)</h3>
-          {methods.qafi.map((m) => (
-            <div
-              key={m}
-              style={{
-                padding: "6px 12px",
-                margin: "4px 0",
-                background: "#f0fdf4",
-                borderRadius: 6,
-                fontSize: 13,
-                fontFamily: "monospace",
-              }}
-            >
-              {m}
+              <div style={{ fontSize: 14, fontWeight: 600, fontFamily: "monospace" }}>
+                {m} {m === "qafisplit3" && <span style={{ fontSize: 11, color: "#16a34a" }}>Recommended</span>}
+              </div>
             </div>
           ))}
         </div>

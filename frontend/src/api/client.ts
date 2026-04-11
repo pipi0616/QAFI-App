@@ -15,9 +15,11 @@ export const api = {
   // Prediction
   getProteins: () => request<{ proteins: any[] }>("/predict/proteins"),
   getProtein: (id: string) => request<any>(`/predict/proteins/${id}`),
-  getMethods: () => request<{ psp: string[]; qafi: string[] }>("/predict/methods"),
-  runPrediction: (data: { protein_id: string; method: string; model_type: string }) =>
+  getMethods: () => request<{ qafi: string[] }>("/predict/methods"),
+  runPrediction: (data: { protein_id: string; method: string; model_type?: string }) =>
     request<any>("/predict/run", { method: "POST", body: JSON.stringify(data) }),
+  getResults: (method: string, proteinId: string) =>
+    request<any>(`/predict/results/${method}/${proteinId}`),
 
   // Analysis
   getFeatures: (proteinId: string) => request<any>(`/analysis/features/${proteinId}`),

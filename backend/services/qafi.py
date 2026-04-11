@@ -6,6 +6,7 @@ All QAFI operations go through here. No modification to QAFI source code.
 import json
 import os
 import subprocess
+import numpy as np
 import pandas as pd
 from pathlib import Path
 from dotenv import load_dotenv
@@ -93,6 +94,54 @@ def run_qafi(method: str, protein_id: str) -> dict:
     else:
         args = ["--method", method] + args
     return run_command("scripts/models/run_qafi.py", args)
+
+
+def load_qafi_results(method: str, protein_id: str) -> dict | None:
+    """Load QAFI prediction results as structured data for the frontend."""
+    results_csv = QAFI_DIR / "outputs" / "runs" / "qafi" / method / protein_id / f"{method}.csv"
+    if not results_csv.exists():
+        return None
+
+    df = pd.read_csv(results_csv)
+    score_col = method  # the prediction column is named after the method
+
+    result = {
+        "total_variants": len(df),
+        "columns": list(df.columns),
+        "variants": [],
+    }
+
+    # Build per-variant records
+    for _, row in df.iterrows():
+        variant = {
+            "variant": row.get("variant", ""),
+            "position": int(row["pos"]) if "pos" in row else None,
+            "wt": row.get("first", ""),
+            "mut": row.get("second", ""),
+            "score": round(float(row[score_col]), 4) if score_col in row else None,
+        }
+        result["variants"].append(variant)
+
+    # Summary stats
+    if score_col in df.columns:
+        scores = df[score_col].dropna()
+        result["stats"] = {
+            "mean": round(float(scores.mean()), 4),
+            "std": round(float(scores.std()), 4),
+            "min": round(float(scores.min()), 4),
+            "max": round(float(scores.max()), 4),
+            "median": round(float(scores.median()), 4),
+        }
+        # Score distribution (histogram bins for chart)
+        hist_counts, bin_edges = np.histogram(scores, bins=20)
+        result["distribution"] = [
+            {"bin_start": round(float(bin_edges[i]), 3),
+             "bin_end": round(float(bin_edges[i + 1]), 3),
+             "count": int(hist_counts[i])}
+            for i in range(len(hist_counts))
+        ]
+
+    return result
 
 
 def load_dataset() -> pd.DataFrame | None:

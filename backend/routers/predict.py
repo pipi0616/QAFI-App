@@ -1,27 +1,15 @@
 """
-Prediction Router — endpoints for running QAFI predictions.
+Prediction Router — endpoints for running QAFI variant predictions.
+QAFI is the clinical prediction model; PSP is internal training only.
 """
 
+import pandas as pd
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from ..services import qafi
 
 router = APIRouter(prefix="/api/predict", tags=["prediction"])
-
-
-class PredictRequest(BaseModel):
-    protein_id: str
-    method: str  # PSP or QAFI method name
-    model_type: str = "psp"  # "psp" or "qafi"
-
-
-class PredictResponse(BaseModel):
-    success: bool
-    method: str
-    protein_id: str
-    output: str
-    error: str | None = None
 
 
 @router.get("/proteins")
@@ -47,27 +35,48 @@ def get_protein(protein_id: str):
 
 @router.get("/methods")
 def get_methods():
-    """List all available prediction methods."""
+    """List available QAFI prediction methods."""
     return {
-        "psp": qafi.list_psp_methods(),
         "qafi": qafi.list_qafi_methods(),
     }
 
 
-@router.post("/run", response_model=PredictResponse)
-def run_prediction(req: PredictRequest):
-    """Run a prediction model."""
-    if req.model_type == "psp":
-        result = qafi.run_psp(req.method)
-    elif req.model_type == "qafi":
-        result = qafi.run_qafi(req.method, req.protein_id)
-    else:
-        raise HTTPException(status_code=400, detail=f"Unknown model_type: {req.model_type}")
+class PredictRequest(BaseModel):
+    protein_id: str
+    method: str = "qafisplit3"  # default to best method
 
-    return PredictResponse(
-        success=result["success"],
-        method=req.method,
-        protein_id=req.protein_id,
-        output=result["stdout"][:3000],
-        error=result["stderr"] if not result["success"] else None,
-    )
+
+@router.post("/run")
+def run_prediction(req: PredictRequest):
+    """Run QAFI prediction and return structured results."""
+    result = qafi.run_qafi(req.method, req.protein_id)
+
+    if not result["success"]:
+        raise HTTPException(status_code=500, detail=result["stderr"][:1000])
+
+    # Try to load the output CSV for structured results
+    predictions = qafi.load_qafi_results(req.method, req.protein_id)
+
+    return {
+        "success": True,
+        "method": req.method,
+        "protein_id": req.protein_id,
+        "log": result["stdout"][:1000],
+        "predictions": predictions,
+    }
+
+
+@router.get("/results/{method}/{protein_id}")
+def get_results(method: str, protein_id: str):
+    """Get previously computed QAFI prediction results."""
+    predictions = qafi.load_qafi_results(method, protein_id)
+    if predictions is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No results for {method}/{protein_id}. Run prediction first.",
+        )
+    return {
+        "method": method,
+        "protein_id": protein_id,
+        "predictions": predictions,
+    }
