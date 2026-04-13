@@ -76,21 +76,35 @@ def _get_agent():
 def _extract_tool_calls(messages) -> list:
     """Extract tool call info from agent message history."""
     calls = []
+    call_by_id = {}  # map tool_call_id → call dict
+
     for msg in messages:
         msg_type = getattr(msg, "type", "")
         if msg_type == "ai" and hasattr(msg, "tool_calls") and msg.tool_calls:
             for tc in msg.tool_calls:
                 info = TOOL_NAMES.get(tc["name"], {"icon": "🔧", "label": tc["name"]})
-                calls.append({
+                entry = {
                     "name": tc["name"],
                     "icon": info["icon"],
                     "label": info["label"],
                     "args": tc["args"],
-                })
+                }
+                calls.append(entry)
+                if "id" in tc:
+                    call_by_id[tc["id"]] = entry
         elif msg_type == "tool":
             content = msg.content if isinstance(msg.content, str) else json.dumps(msg.content, ensure_ascii=False)
-            if calls:
-                calls[-1]["result"] = content[:300]
+            # Match by tool_call_id
+            tid = getattr(msg, "tool_call_id", None)
+            if tid and tid in call_by_id:
+                call_by_id[tid]["result"] = content[:500]
+            else:
+                # Fallback: match by name
+                name = getattr(msg, "name", "")
+                for c in reversed(calls):
+                    if c["name"] == name and "result" not in c:
+                        c["result"] = content[:500]
+                        break
     return calls
 
 
