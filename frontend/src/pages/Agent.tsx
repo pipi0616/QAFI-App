@@ -31,22 +31,37 @@ function summarizeToolResult(name: string, result?: string): { status: "positive
     const d = JSON.parse(result);
     switch (name) {
       case "qafi_predict":
-        return { status: "neutral", summary: `Score: ${d.score ?? "N/A"} — ${d.method ?? "qafisplit3"}` };
+        if (d.score != null) {
+          const s = d.score > 1.1 ? "positive" : d.score < 0.8 ? "negative" : "neutral";
+          return { status: s as any, summary: `QAFI Score: ${d.score} (method: ${d.method ?? "qafisplit3"})` };
+        }
+        return { status: "neutral", summary: d.error || "No prediction available" };
       case "clinvar_lookup":
-        if (d.found) return { status: d.significance?.toLowerCase().includes("pathogenic") ? "positive" : "neutral", summary: `${d.significance} (${d.stars ?? 0}★)` };
-        return { status: "neutral", summary: `Not reported — ${d.gene_variant_count ?? 0} gene variants in ClinVar` };
+        if (d.found) {
+          const sig = (d.significance || "").toLowerCase();
+          const st = sig.includes("pathogenic") ? "positive" : sig.includes("benign") ? "negative" : "neutral";
+          return { status: st, summary: `${d.significance} (${d.stars ?? 0}★) — ${d.accession || ""}` };
+        }
+        return { status: "neutral", summary: `Not reported in ClinVar — ${d.gene_variant_count ?? 0} gene variants exist` };
       case "alphamissense_predict":
         if (!d.available) return { status: "neutral", summary: "Not available" };
         return { status: d.am_class === "LPath" ? "positive" : d.am_class === "LBen" ? "negative" : "neutral", summary: `${d.am_class_label} (${d.am_score})` };
       case "gnomad_frequency":
-        if (d.allele_freq === 0) return { status: "positive", summary: "Absent from gnomAD (~800K individuals)" };
-        return { status: "negative", summary: `AF = ${d.allele_freq < 0.001 ? d.allele_freq.toExponential(2) : d.allele_freq.toFixed(4)}` };
-      case "uniprot_annotate":
-        const inFunc = d.in_functional_region ? "In functional domain" : "Not in known functional domain";
-        return { status: d.in_functional_region ? "positive" : "neutral", summary: `${d.protein_name?.slice(0, 40) ?? "N/A"} — ${inFunc}` };
+        if (d.allele_freq === 0) return { status: "positive", summary: "Absent from gnomAD (~800K individuals) — supports PM2" };
+        if (d.allele_freq < 0.0001) return { status: "neutral", summary: `Ultra-rare (AF=${d.allele_freq.toExponential(2)}) — AC=${d.allele_count}` };
+        if (d.allele_freq < 0.01) return { status: "neutral", summary: `Rare (AF=${d.allele_freq.toFixed(4)}) — AC=${d.allele_count}` };
+        return { status: "negative", summary: `Common (AF=${d.allele_freq.toFixed(4)}) — likely benign (BA1 if >5%)` };
+      case "uniprot_annotate": {
+        const protName = d.protein_name?.slice(0, 50) ?? "N/A";
+        if (d.in_functional_region) return { status: "positive", summary: `${protName} — In functional domain` };
+        const feats = d.position_features?.length ?? 0;
+        return { status: "neutral", summary: `${protName} — ${feats > 0 ? `${feats} annotation(s) at position` : "No functional domain"}` };
+      }
       case "pubmed_search":
-        const total = (d.variant_paper_count ?? 0) + (d.gene_paper_count ?? 0);
-        return { status: d.variant_paper_count > 0 ? "positive" : "neutral", summary: `${d.variant_paper_count ?? 0} variant-specific, ${d.gene_paper_count ?? 0} gene papers` };
+        return {
+          status: (d.variant_paper_count ?? 0) > 0 ? "positive" : "neutral",
+          summary: `${d.variant_paper_count ?? 0} variant-specific paper(s), ${d.gene_paper_count ?? 0} gene clinical paper(s)`,
+        };
       case "acmg_guideline":
         return { status: "neutral", summary: "Guidelines consulted" };
       default:
