@@ -6,7 +6,7 @@ A clinical-facing web application for protein variant prediction and interpretat
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .routers import predict, analysis, agent
+from .routers import predict, analysis, agent, langchain_agent
 
 app = FastAPI(
     title="QAFI",
@@ -26,6 +26,7 @@ app.add_middleware(
 app.include_router(predict.router)
 app.include_router(analysis.router)
 app.include_router(agent.router)
+app.include_router(langchain_agent.router)
 
 
 @app.get("/api/health")

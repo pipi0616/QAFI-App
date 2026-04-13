@@ -1,11 +1,11 @@
 import { NavLink, Outlet } from "react-router-dom";
-import { Activity, BarChart3, Brain, MessageSquare } from "lucide-react";
+import { Activity, BarChart3, Brain, Zap } from "lucide-react";
 
 const navItems = [
   { to: "/", icon: Activity, label: "Dashboard" },
   { to: "/predict", icon: BarChart3, label: "Prediction" },
   { to: "/interpret", icon: Brain, label: "Interpretation" },
-  { to: "/agent", icon: MessageSquare, label: "AI Agent" },
+  { to: "/agent", icon: Zap, label: "LangChain Agent" },
 ];
 
 export default function Layout() {
