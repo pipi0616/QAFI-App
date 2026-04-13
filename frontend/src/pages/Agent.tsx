@@ -67,7 +67,7 @@ export default function AgentPage() {
   const [activeTab, setActiveTab] = useState<TabKey>("assess");
   const [protein, setProtein] = useState("Q9Y375");
   const [gene, setGene] = useState("NDUFAF1");
-  const [variant, setVariant] = useState("");
+  const [variant, setVariant] = useState("V116F");
   const [loading, setLoading] = useState(false);
   const [report, setReport] = useState("");
   const [toolCalls, setToolCalls] = useState<ToolCall[]>([]);
@@ -189,7 +189,7 @@ export default function AgentPage() {
               </button>
             </div>
             <div style={{ display: "flex", gap: 6, marginTop: 12 }}>
-              {["L117H", "M1A", "V116F", "G50D"].map((v) => (
+              {["V116F", "L117H", "M1A", "T72S"].map((v) => (
                 <button key={v} onClick={() => setVariant(v)} style={{
                   padding: "4px 12px", borderRadius: 16, border: "1px solid #e2e8f0",
                   background: variant === v ? "#eff6ff" : "#f8fafc", fontSize: 12,

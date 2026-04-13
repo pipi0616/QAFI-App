@@ -383,7 +383,7 @@ export default function Predict() {
             Type a variant name like <strong style={{ fontFamily: "monospace" }}>L117H</strong> to get a comprehensive AI-powered clinical assessment with evidence from 5 sources.
           </p>
           <div style={{ marginTop: 20, display: "flex", gap: 8, justifyContent: "center" }}>
-            {["M1A", "L117H", "V116F", "G50D"].map(ex => (
+            {["V116F", "L117H", "M1A", "T72S"].map(ex => (
               <button key={ex} onClick={() => setQuery(ex)} style={{ padding: "6px 14px", borderRadius: 20, border: "1px solid #e2e8f0", background: "#f8fafc", fontSize: 13, fontFamily: "monospace", cursor: "pointer", color: "#475569" }}>{ex}</button>
             ))}
           </div>
