@@ -81,8 +81,21 @@ export default function Predict() {
     setAssessment(null);
     setChatMessages([]);
     setAssessing(true);
-    api.assess(result)
-      .then(setAssessment)
+    api.assess({ protein_id: result.protein_id, gene: result.protein_name, variant: result.variant })
+      .then((res: any) => {
+        // Map LangChain response to Assessment format
+        setAssessment({
+          classification: res.report?.match(/Classification[:\s]*(.*)/i)?.[1]?.trim() || "See report below",
+          confidence: "See report",
+          summary: res.report?.slice(0, 300) || "",
+          evidence_for_pathogenic: [],
+          evidence_for_benign: [],
+          evidence_uncertain: [],
+          acmg_criteria: [],
+          recommendation: "",
+          report: res.report || "",
+        });
+      })
       .catch(() => setAssessment(null))
       .finally(() => setAssessing(false));
   }, [result]);
@@ -96,7 +109,7 @@ export default function Predict() {
     setChatInput("");
     setChatLoading(true);
     try {
-      const res = await api.chat(newMsgs.map(m => ({ role: m.role, content: m.content })), result);
+      const res = await api.chat(newMsgs.map(m => ({ role: m.role, content: m.content })));
       setChatMessages([...newMsgs, { role: "assistant", content: res.reply }]);
     } catch {
       setChatMessages([...newMsgs, { role: "assistant", content: "Connection failed. Check ANTHROPIC_API_KEY." }]);

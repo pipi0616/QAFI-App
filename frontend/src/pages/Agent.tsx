@@ -58,7 +58,7 @@ export default function AgentPage() {
   const [tools, setTools] = useState<any[]>([]);
 
   useEffect(() => {
-    api.lcTools().then((d) => setTools(d.tools)).catch(() => {});
+    api.tools().then((d) => setTools(d.tools)).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -75,7 +75,7 @@ export default function AgentPage() {
     setMeta(null);
     setShowTools(false);
     try {
-      const res = await api.lcAssess({ protein_id: protein, gene, variant: variant.trim() });
+      const res = await api.assess({ protein_id: protein, gene, variant: variant.trim() });
       setReport(res.report);
       setToolCalls(res.tool_calls || []);
       setMeta({ variant: res.variant, gene: res.gene, position: res.position, wt: res.wt, mut: res.mut });
@@ -95,7 +95,7 @@ export default function AgentPage() {
     setChatInput("");
     setChatLoading(true);
     try {
-      const res = await api.lcChat(newMsgs.map((m) => ({ role: m.role, content: m.content })));
+      const res = await api.chat(newMsgs.map((m) => ({ role: m.role, content: m.content })));
       setChatMessages([...newMsgs, { role: "assistant", content: res.reply, tools: res.tool_calls }]);
     } catch {
       setChatMessages([...newMsgs, { role: "assistant", content: "Connection failed. Check ANTHROPIC_API_KEY." }]);

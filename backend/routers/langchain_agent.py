@@ -1,8 +1,7 @@
 """
-LangChain Agent Router — LangChain-powered variant interpretation.
+Agent Router — LangChain-powered variant interpretation.
 
-Distinct from the basic agent:
-- Uses LangChain @tool + create_react_agent
+Uses LangChain @tool + create_react_agent with:
 - 7 tools with automatic selection
 - RAG over ACMG guidelines
 - Supports single variant, batch, and free-form chat
@@ -31,7 +30,7 @@ from tools.uniprot_tool import uniprot_annotate
 from tools.pubmed_tool import pubmed_search
 from rag.acmg_knowledge import acmg_guideline
 
-router = APIRouter(prefix="/api/langchain", tags=["langchain-agent"])
+router = APIRouter(prefix="/api/agent", tags=["agent"])
 
 SYSTEM_PROMPT = """You are a clinical genetics expert performing variant interpretation.
 

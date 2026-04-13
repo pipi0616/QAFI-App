@@ -28,25 +28,13 @@ export const api = {
   getDatasetOverview: () => request<any>("/analysis/dataset/overview"),
   getFeatureImportance: () => request<any>("/analysis/feature-importance"),
 
-  // LangChain Agent
-  lcAssess: (data: { protein_id: string; gene: string; variant: string; language?: string }) =>
-    request<any>("/langchain/assess", { method: "POST", body: JSON.stringify(data) }),
-  lcChat: (messages: { role: string; content: string }[], language?: string) =>
-    request<any>("/langchain/chat", {
+  // Agent (LangChain)
+  assess: (data: { protein_id: string; gene: string; variant: string; language?: string }) =>
+    request<any>("/agent/assess", { method: "POST", body: JSON.stringify(data) }),
+  chat: (messages: { role: string; content: string }[], language?: string) =>
+    request<any>("/agent/chat", {
       method: "POST",
       body: JSON.stringify({ messages, language: language ?? "en" }),
     }),
-  lcTools: () => request<any>("/langchain/tools"),
-
-  // Agent (legacy)
-  assess: (variantData: any, language?: string) =>
-    request<any>("/agent/assess", {
-      method: "POST",
-      body: JSON.stringify({ variant_data: variantData, language: language ?? "en" }),
-    }),
-  chat: (messages: { role: string; content: string }[], variantData?: any) =>
-    request<{ reply: string }>("/agent/chat", {
-      method: "POST",
-      body: JSON.stringify({ messages, variant_data: variantData ?? null }),
-    }),
+  tools: () => request<any>("/agent/tools"),
 };
