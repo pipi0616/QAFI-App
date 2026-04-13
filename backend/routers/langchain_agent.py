@@ -9,26 +9,19 @@ Uses LangChain @tool + create_react_agent with:
 
 import json
 import time
-import sys
-from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-
-# Add QAFI_LangChain to path so we can import its tools
-LANGCHAIN_DIR = Path(__file__).parent.parent.parent.parent / "QAFI_LangChain"
-if str(LANGCHAIN_DIR) not in sys.path:
-    sys.path.insert(0, str(LANGCHAIN_DIR))
 
 from langchain_anthropic import ChatAnthropic
 from langgraph.prebuilt import create_react_agent
 
-from tools.qafi_tool import qafi_predict
-from tools.clinvar_tool import clinvar_lookup
-from tools.alphamissense_tool import alphamissense_predict
-from tools.gnomad_tool import gnomad_frequency
-from tools.uniprot_tool import uniprot_annotate
-from tools.pubmed_tool import pubmed_search
-from rag.acmg_knowledge import acmg_guideline
+from ..langchain_tools.qafi_tool import qafi_predict
+from ..langchain_tools.clinvar_tool import clinvar_lookup
+from ..langchain_tools.alphamissense_tool import alphamissense_predict
+from ..langchain_tools.gnomad_tool import gnomad_frequency
+from ..langchain_tools.uniprot_tool import uniprot_annotate
+from ..langchain_tools.pubmed_tool import pubmed_search
+from ..rag.acmg_knowledge import acmg_guideline
 
 router = APIRouter(prefix="/api/agent", tags=["agent"])
 
