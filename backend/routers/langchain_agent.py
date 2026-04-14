@@ -25,25 +25,55 @@ from ..rag.acmg_knowledge import acmg_guideline
 
 router = APIRouter(prefix="/api/agent", tags=["agent"])
 
-SYSTEM_PROMPT = """You are a clinical genetics expert performing variant interpretation.
+SYSTEM_PROMPT = """You are an autonomous clinical genetics expert performing variant interpretation.
 
-You have 7 tools. For a comprehensive assessment, call ALL relevant tools:
-1. qafi_predict — QAFI prediction model
-2. clinvar_lookup — ClinVar clinical database
-3. alphamissense_predict — AlphaMissense (Google DeepMind)
-4. gnomad_frequency — population frequency
-5. uniprot_annotate — protein annotations
-6. pubmed_search — literature search
-7. acmg_guideline — ACMG classification guidelines (RAG)
+You have 7 tools. Use them STRATEGICALLY based on what you learn, not mechanically. Think like a real geneticist deciding which databases to consult based on the case.
 
-After gathering evidence, provide a structured report with:
-- ACMG classification with applicable criteria
-- Evidence for/against pathogenicity
+## Available tools
+- **clinvar_lookup**: ClinVar clinical significance (always start here — highest evidence weight)
+- **gnomad_frequency**: Population allele frequency (critical for ACMG PM2/BA1)
+- **qafi_predict**: QAFI ML prediction (functional impact score + percentile)
+- **alphamissense_predict**: AlphaMissense deep learning predictor
+- **uniprot_annotate**: Protein function, domains, disease associations
+- **pubmed_search**: Literature search (slow — only when needed)
+- **acmg_guideline**: ACMG classification standards (RAG)
+
+## Decision framework — think step by step
+
+**Step 1: Start with ClinVar.**
+- If ClinVar has a clear 3-4 star pathogenic/benign record → you already have strong evidence. Verify with gnomad_frequency, then classify.
+- If ClinVar is 1-2 stars or VUS → you need more evidence.
+- If ClinVar has no record → this is a novel variant, gather computational + population evidence.
+
+**Step 2: After ClinVar, decide what's next based on what you learned.**
+- Always check gnomad_frequency (PM2/BA1 are ACMG cornerstone criteria).
+- If gnomAD is common (AF > 5%) → immediately BA1 benign, skip most other tools.
+- Otherwise use at least one computational predictor (qafi_predict or alphamissense_predict).
+- If computational predictors agree → you can classify with fewer tools.
+- If they disagree → query more evidence (uniprot for functional domain context).
+
+**Step 3: Only query these if needed:**
+- **pubmed_search**: Only if you need functional study evidence OR user explicitly asks about literature.
+- **uniprot_annotate**: Only if position context matters (e.g. active site = PM1).
+- **acmg_guideline**: Query when you need to confirm which criteria apply.
+
+## When NOT to call tools
+- User asks "what does PM2 mean?" → only call acmg_guideline, nothing else.
+- User asks "is this in ClinVar?" → only call clinvar_lookup.
+- User asks about literature → only call pubmed_search.
+- Follow-up questions about previous findings → don't re-query, use what you already have.
+
+## Explain your reasoning
+Before each tool call, briefly state WHY you're calling it (1 sentence).
+After gathering enough evidence, explicitly state WHY you're stopping.
+
+## Final report format
+- ACMG classification with applicable criteria (PM2, BP4, etc.)
+- Evidence summary: what supports pathogenic, what supports benign, what's inconclusive
 - Clinical recommendation
-- Formal report paragraph for medical records
+- Brief formal report paragraph
 
-Respond in the same language as the user. Be thorough but concise.
-IMPORTANT: Call ALL relevant tools before giving your final assessment."""
+Respond in the same language as the user. Your goal: accurate classification with the MINIMUM tool calls needed. A variant with clear ClinVar Pathogenic + Absent in gnomAD can be classified in 2-3 tool calls, not 7."""
 
 TOOL_NAMES = {
     "qafi_predict": {"icon": "🧬", "label": "QAFI Prediction"},
@@ -125,9 +155,11 @@ def assess_single(req: SingleRequest):
 
     query = (
         f"{lang}\n\n"
-        f"Perform a comprehensive clinical assessment of variant {req.gene} {req.variant} "
-        f"(protein: {req.protein_id}, position: {pos}, {wt}->{mut}).\n"
-        f"Call all relevant tools, then provide ACMG classification and clinical report."
+        f"Please classify the variant {req.gene} {req.variant} "
+        f"(protein: {req.protein_id}, position: {pos}, {wt}→{mut}).\n\n"
+        f"Use your decision framework to gather appropriate evidence, "
+        f"then provide ACMG classification and a clinical report. "
+        f"Be efficient — stop gathering evidence once you have enough to classify confidently."
     )
 
     result = agent.invoke({"messages": [("user", query)]})
