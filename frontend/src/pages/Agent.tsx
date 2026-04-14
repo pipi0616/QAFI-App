@@ -1,6 +1,8 @@
 import { useEffect, useState, useRef } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { api } from "../api/client";
-import { Bot, Send, User, Loader2, Search, ChevronDown, ChevronUp, Zap, FileText, MessageSquare, CheckCircle, XCircle, MinusCircle, ExternalLink, Copy, Check } from "lucide-react";
+import { Bot, Send, User, Loader2, Search, Zap, FileText, MessageSquare, CheckCircle, XCircle, MinusCircle, Copy, Check } from "lucide-react";
 
 const card: React.CSSProperties = {
   background: "#fff", borderRadius: 12, padding: 24,
@@ -251,45 +253,40 @@ export default function AgentPage() {
                 </div>
               )}
 
-              {/* ====== EVIDENCE SUMMARY (clinical-friendly) ====== */}
+              {/* ====== EVIDENCE SUMMARY (compact grid) ====== */}
               <div style={{ ...card, marginTop: 12 }}>
-                <h3 style={{ fontSize: 16, fontWeight: 600, marginBottom: 16, color: "#0f172a" }}>
-                  Evidence Summary
-                </h3>
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+                  <h3 style={{ fontSize: 16, fontWeight: 600, margin: 0, color: "#0f172a" }}>Evidence Summary</h3>
+                  <div style={{ display: "flex", gap: 12 }}>
+                    <span style={{ fontSize: 11, color: "#dc2626", display: "flex", alignItems: "center", gap: 3 }}><XCircle size={11} /> Pathogenic</span>
+                    <span style={{ fontSize: 11, color: "#16a34a", display: "flex", alignItems: "center", gap: 3 }}><CheckCircle size={11} /> Benign</span>
+                    <span style={{ fontSize: 11, color: "#94a3b8", display: "flex", alignItems: "center", gap: 3 }}><MinusCircle size={11} /> Inconclusive</span>
+                  </div>
+                </div>
+
+                {/* 3-column grid for density */}
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 10 }}>
                   {toolCalls.map((tc, i) => {
                     const source = EVIDENCE_SOURCES[tc.name] || { icon: "🔧", label: tc.label, desc: "", color: "#94a3b8" };
                     const { status, summary } = summarizeToolResult(tc.name, tc.result);
-                    const si = STATUS_ICON[status];
+                    const statusColor = status === "positive" ? "#dc2626" : status === "negative" ? "#16a34a" : "#94a3b8";
                     return (
                       <div key={i} style={{
-                        display: "flex", alignItems: "center", gap: 14,
-                        padding: "14px 16px", borderRadius: 10,
+                        padding: "10px 12px", borderRadius: 8,
                         background: status === "positive" ? "#fef2f2" : status === "negative" ? "#f0fdf4" : "#f8fafc",
                         border: `1px solid ${status === "positive" ? "#fecaca" : status === "negative" ? "#bbf7d0" : "#e2e8f0"}`,
+                        borderLeft: `3px solid ${statusColor}`,
                       }}>
-                        {/* Status indicator */}
-                        <si.Icon size={18} color={si.color} style={{ flexShrink: 0 }} />
-
-                        {/* Source info */}
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                            <span style={{ fontSize: 18 }}>{source.icon}</span>
-                            <span style={{ fontSize: 14, fontWeight: 600, color: "#0f172a" }}>{source.label}</span>
-                            <span style={{ fontSize: 11, color: "#94a3b8" }}>{source.desc}</span>
-                          </div>
-                          <div style={{ fontSize: 13, color: "#475569", marginTop: 3 }}>{summary}</div>
+                        {/* Header: icon + name */}
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                          <span style={{ fontSize: 15 }}>{source.icon}</span>
+                          <span style={{ fontSize: 13, fontWeight: 600, color: "#0f172a" }}>{source.label}</span>
                         </div>
+                        {/* Summary content */}
+                        <div style={{ fontSize: 12, color: "#475569", lineHeight: 1.5 }}>{summary}</div>
                       </div>
                     );
                   })}
-                </div>
-
-                {/* Legend */}
-                <div style={{ display: "flex", gap: 16, marginTop: 14, paddingTop: 12, borderTop: "1px solid #f1f5f9" }}>
-                  <span style={{ fontSize: 11, color: "#dc2626", display: "flex", alignItems: "center", gap: 4 }}><XCircle size={12} /> Supports pathogenicity</span>
-                  <span style={{ fontSize: 11, color: "#16a34a", display: "flex", alignItems: "center", gap: 4 }}><CheckCircle size={12} /> Supports benign</span>
-                  <span style={{ fontSize: 11, color: "#94a3b8", display: "flex", alignItems: "center", gap: 4 }}><MinusCircle size={12} /> Inconclusive / Not available</span>
                 </div>
               </div>
 
@@ -309,12 +306,13 @@ export default function AgentPage() {
                   </button>
                 </div>
 
-                <div style={{
+                <div className="clinical-report" style={{
                   background: "#fafbfd", border: "1px solid #e8ecf1", borderRadius: 10,
-                  padding: "24px 28px", fontSize: 14, lineHeight: 2, color: "#1e293b",
-                  whiteSpace: "pre-wrap", fontFamily: "'Georgia', 'Times New Roman', serif",
+                  padding: "28px 32px",
                 }}>
-                  {report}
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                    {report}
+                  </ReactMarkdown>
                 </div>
 
                 <div style={{ marginTop: 12, fontSize: 11, color: "#94a3b8", fontStyle: "italic" }}>
@@ -412,7 +410,49 @@ export default function AgentPage() {
         </div>
       )}
 
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } } .spin { animation: spin 1s linear infinite; }`}</style>
+      <style>{`
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .spin { animation: spin 1s linear infinite; }
+
+        /* Clinical report markdown styling */
+        .clinical-report { font-family: 'Georgia', 'Times New Roman', serif; color: #1e293b; line-height: 1.75; }
+        .clinical-report h1, .clinical-report h2 {
+          font-family: 'Inter', -apple-system, sans-serif;
+          font-size: 20px; font-weight: 700; color: #0f172a;
+          margin: 0 0 16px; padding-bottom: 10px; border-bottom: 2px solid #e2e8f0;
+        }
+        .clinical-report h3 {
+          font-family: 'Inter', -apple-system, sans-serif;
+          font-size: 15px; font-weight: 700; color: #1e3a5f;
+          margin: 24px 0 10px; text-transform: uppercase; letter-spacing: 0.5px;
+        }
+        .clinical-report h4 {
+          font-family: 'Inter', -apple-system, sans-serif;
+          font-size: 14px; font-weight: 600; color: #475569;
+          margin: 16px 0 8px;
+        }
+        .clinical-report p { margin: 0 0 12px; font-size: 14px; }
+        .clinical-report strong { color: #0f172a; font-weight: 700; }
+        .clinical-report ul, .clinical-report ol { margin: 8px 0 16px; padding-left: 24px; }
+        .clinical-report li { margin: 4px 0; font-size: 14px; }
+        .clinical-report code {
+          background: #f1f5f9; padding: 2px 6px; border-radius: 4px;
+          font-family: 'Monaco', 'Consolas', monospace; font-size: 12px; color: #0f172a;
+        }
+        .clinical-report blockquote {
+          border-left: 3px solid #3b82f6; padding: 8px 16px; margin: 12px 0;
+          background: #eff6ff; color: #1e3a5f; font-style: italic;
+        }
+        .clinical-report table {
+          border-collapse: collapse; width: 100%; margin: 12px 0;
+          font-family: 'Inter', sans-serif; font-size: 13px;
+        }
+        .clinical-report th, .clinical-report td {
+          border: 1px solid #e2e8f0; padding: 8px 12px; text-align: left;
+        }
+        .clinical-report th { background: #f8fafc; font-weight: 600; }
+        .clinical-report hr { border: none; border-top: 1px solid #e2e8f0; margin: 20px 0; }
+      `}</style>
     </div>
   );
 }
