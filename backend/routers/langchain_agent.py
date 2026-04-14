@@ -90,13 +90,13 @@ def _extract_tool_calls(messages) -> list:
             # Match by tool_call_id
             tid = getattr(msg, "tool_call_id", None)
             if tid and tid in call_by_id:
-                call_by_id[tid]["result"] = content[:500]
+                call_by_id[tid]["result"] = content[:2000]
             else:
                 # Fallback: match by name
                 name = getattr(msg, "name", "")
                 for c in reversed(calls):
                     if c["name"] == name and "result" not in c:
-                        c["result"] = content[:500]
+                        c["result"] = content[:2000]
                         break
     return calls
 

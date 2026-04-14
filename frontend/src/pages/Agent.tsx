@@ -32,8 +32,11 @@ function summarizeToolResult(name: string, result?: string): { status: "positive
     switch (name) {
       case "qafi_predict":
         if (d.score != null) {
-          const s = d.score > 1.1 ? "positive" : d.score < 0.8 ? "negative" : "neutral";
-          return { status: s as any, summary: `QAFI Score: ${d.score} (method: ${d.method ?? "qafisplit3"})` };
+          const pct = d.percentile ?? 0;
+          const s = pct >= 80 ? "positive" : pct < 30 ? "negative" : "neutral";
+          const pos = d.position_analysis;
+          const posInfo = pos ? ` · Rank ${pos.rank_at_position}/${pos.total_at_position} at position` : "";
+          return { status: s as any, summary: `Score ${d.score} — ${d.classification || "N/A"} (${pct}th percentile)${posInfo}` };
         }
         return { status: "neutral", summary: d.error || "No prediction available" };
       case "clinvar_lookup":
