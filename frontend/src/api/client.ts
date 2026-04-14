@@ -37,4 +37,40 @@ export const api = {
       body: JSON.stringify({ messages, language: language ?? "en" }),
     }),
   tools: () => request<any>("/agent/tools"),
+
+  // Streaming chat — calls onEvent for each SSE event
+  chatStream: async (
+    messages: { role: string; content: string }[],
+    onEvent: (event: any) => void,
+    language?: string,
+  ) => {
+    const res = await fetch(`${BASE_URL}/agent/chat/stream`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messages, language: language ?? "en" }),
+    });
+    if (!res.ok || !res.body) throw new Error(`Stream error: ${res.status}`);
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      // Parse SSE events (data: {...}\n\n)
+      const lines = buffer.split("\n\n");
+      buffer = lines.pop() || "";
+      for (const line of lines) {
+        if (line.startsWith("data: ")) {
+          try {
+            const event = JSON.parse(line.slice(6));
+            onEvent(event);
+          } catch {}
+        }
+      }
+    }
+  },
 };

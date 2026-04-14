@@ -120,11 +120,50 @@ export default function AgentPage() {
     if (!msg || chatLoading) return;
     const userMsg = { role: "user" as const, content: msg };
     const newMsgs = [...chatMessages, userMsg];
-    setChatMessages(newMsgs); setChatInput(""); setChatLoading(true);
+
+    // Add empty assistant message that will be filled by streaming
+    const placeholderIdx = newMsgs.length;
+    setChatMessages([...newMsgs, { role: "assistant", content: "", tools: [] }]);
+    setChatInput(""); setChatLoading(true);
+
+    let streamedContent = "";
+    const streamedTools: ToolCall[] = [];
+
     try {
-      const res = await api.chat(newMsgs.map((m) => ({ role: m.role, content: m.content })));
-      setChatMessages([...newMsgs, { role: "assistant", content: res.reply, tools: res.tool_calls }]);
-    } catch { setChatMessages([...newMsgs, { role: "assistant", content: "Connection failed." }]); }
+      await api.chatStream(
+        newMsgs.map((m) => ({ role: m.role, content: m.content })),
+        (event) => {
+          if (event.type === "token") {
+            streamedContent += event.text;
+            setChatMessages((prev) => {
+              const updated = [...prev];
+              updated[placeholderIdx] = { role: "assistant", content: streamedContent, tools: [...streamedTools] };
+              return updated;
+            });
+          } else if (event.type === "tool_start") {
+            streamedTools.push({ name: event.name, icon: event.icon, label: event.label, args: event.args });
+            setChatMessages((prev) => {
+              const updated = [...prev];
+              updated[placeholderIdx] = { role: "assistant", content: streamedContent, tools: [...streamedTools] };
+              return updated;
+            });
+          } else if (event.type === "tool_end") {
+            // Find latest matching tool and attach result
+            const t = [...streamedTools].reverse().find((tc) => tc.name === event.name && !tc.result);
+            if (t) t.result = event.result;
+          } else if (event.type === "error") {
+            streamedContent += `\n\nError: ${event.message}`;
+          }
+        },
+      );
+    } catch {
+      streamedContent += "\n\nConnection failed. Check ANTHROPIC_API_KEY.";
+      setChatMessages((prev) => {
+        const updated = [...prev];
+        updated[placeholderIdx] = { role: "assistant", content: streamedContent, tools: streamedTools };
+        return updated;
+      });
+    }
     setChatLoading(false);
   };
 
@@ -370,7 +409,13 @@ export default function AgentPage() {
                   {msg.role === "user" ? <User size={16} color="#fff" /> : <Bot size={16} color="#38bdf8" />}
                 </div>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 14, lineHeight: 1.7, color: "#1e293b", whiteSpace: "pre-wrap" }}>{msg.content}</div>
+                  <div className={msg.role === "assistant" ? "chat-md" : ""} style={{ fontSize: 14, lineHeight: 1.7, color: "#1e293b" }}>
+                    {msg.role === "assistant" ? (
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
+                    ) : (
+                      <span style={{ whiteSpace: "pre-wrap" }}>{msg.content}</span>
+                    )}
+                  </div>
                   {msg.tools && msg.tools.length > 0 && (
                     <div style={{ marginTop: 8, display: "flex", gap: 4, flexWrap: "wrap" }}>
                       {msg.tools.map((tc, j) => {
@@ -390,11 +435,25 @@ export default function AgentPage() {
                 </div>
               </div>
             ))}
-            {chatLoading && (
-              <div style={{ display: "flex", gap: 10, alignItems: "center", color: "#94a3b8" }}>
-                <Loader2 size={18} style={{ animation: "spin 1s linear infinite" }} /> <span style={{ fontSize: 14 }}>Agent is thinking...</span>
-              </div>
-            )}
+            {chatLoading && (() => {
+              // Show what the Agent is currently doing based on last message tools
+              const last = chatMessages[chatMessages.length - 1];
+              const tools = last?.tools || [];
+              const lastTool = tools[tools.length - 1];
+              const inProgress = lastTool && !lastTool.result;
+              return (
+                <div style={{ display: "flex", gap: 10, alignItems: "center", color: "#94a3b8" }}>
+                  <Loader2 size={18} style={{ animation: "spin 1s linear infinite" }} />
+                  <span style={{ fontSize: 14 }}>
+                    {inProgress
+                      ? `Calling ${lastTool.label}...`
+                      : last?.content
+                        ? "Generating response..."
+                        : "Agent is thinking..."}
+                  </span>
+                </div>
+              );
+            })()}
             <div ref={chatEndRef} />
           </div>
           <div style={{ display: "flex", gap: 8 }}>
@@ -452,6 +511,20 @@ export default function AgentPage() {
         }
         .clinical-report th { background: #f8fafc; font-weight: 600; }
         .clinical-report hr { border: none; border-top: 1px solid #e2e8f0; margin: 20px 0; }
+
+        /* Chat markdown — lighter than clinical report */
+        .chat-md p { margin: 0 0 8px; }
+        .chat-md p:last-child { margin-bottom: 0; }
+        .chat-md ul, .chat-md ol { margin: 6px 0 8px; padding-left: 22px; }
+        .chat-md li { margin: 2px 0; }
+        .chat-md h1, .chat-md h2, .chat-md h3, .chat-md h4 {
+          font-size: 14px; font-weight: 700; margin: 12px 0 6px; color: #0f172a;
+        }
+        .chat-md strong { color: #0f172a; font-weight: 600; }
+        .chat-md code {
+          background: #f1f5f9; padding: 1px 5px; border-radius: 3px;
+          font-family: monospace; font-size: 12px;
+        }
       `}</style>
     </div>
   );

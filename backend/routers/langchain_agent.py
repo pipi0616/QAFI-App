@@ -211,6 +211,85 @@ def langchain_chat(req: ChatRequest):
     }
 
 
+@router.post("/chat/stream")
+async def langchain_chat_stream(req: ChatRequest):
+    """Streaming version of chat — sends events as Agent thinks/calls tools."""
+    from fastapi.responses import StreamingResponse
+
+    agent = _get_agent()
+    lang = "Respond in Chinese." if req.language == "zh" else "Respond in English."
+
+    lc_messages = [(m["role"], m["content"]) for m in req.messages]
+    if lc_messages:
+        role, content = lc_messages[-1]
+        lc_messages[-1] = (role, f"{lang}\n{content}")
+
+    async def event_stream():
+        """Yield Server-Sent Events as the agent processes."""
+        try:
+            # Use astream_events to get fine-grained progress
+            async for event in agent.astream_events(
+                {"messages": lc_messages},
+                version="v2",
+            ):
+                kind = event.get("event", "")
+                name = event.get("name", "")
+
+                # Tool started
+                if kind == "on_tool_start":
+                    info = TOOL_NAMES.get(name, {"icon": "🔧", "label": name})
+                    payload = {
+                        "type": "tool_start",
+                        "name": name,
+                        "icon": info["icon"],
+                        "label": info["label"],
+                        "args": event.get("data", {}).get("input", {}),
+                    }
+                    yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+                # Tool finished
+                elif kind == "on_tool_end":
+                    output = event.get("data", {}).get("output", "")
+                    if hasattr(output, "content"):
+                        output = output.content
+                    payload = {
+                        "type": "tool_end",
+                        "name": name,
+                        "result": str(output)[:500],
+                    }
+                    yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+                # LLM streaming text tokens
+                elif kind == "on_chat_model_stream":
+                    chunk = event.get("data", {}).get("chunk")
+                    if chunk and hasattr(chunk, "content"):
+                        text = chunk.content
+                        # Content may be a list (Anthropic format) or string
+                        if isinstance(text, list):
+                            for block in text:
+                                if isinstance(block, dict) and block.get("type") == "text":
+                                    payload = {"type": "token", "text": block.get("text", "")}
+                                    yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+                        elif isinstance(text, str) and text:
+                            payload = {"type": "token", "text": text}
+                            yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+            # Done
+            yield f"data: {json.dumps({'type': 'done'})}\n\n"
+
+        except Exception as e:
+            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
 @router.get("/tools")
 def list_tools():
     """List all available LangChain tools."""
