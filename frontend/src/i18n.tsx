@@ -20,9 +20,8 @@ export function useLang() {
 export const T: Record<string, Record<Lang, string>> = {
   // Nav
   nav_home: { en: "Home", zh: "首页" },
-  nav_predict: { en: "Prediction", zh: "变异预测" },
-  nav_interpret: { en: "Interpretation", zh: "特征解读" },
-  nav_agent: { en: "LangChain Agent", zh: "智能分析" },
+  nav_agent: { en: "Variant Analysis", zh: "变异分析" },
+  nav_interpret: { en: "Feature Reference", zh: "特征解读" },
 
   // Landing - Hero
   hero_title: {

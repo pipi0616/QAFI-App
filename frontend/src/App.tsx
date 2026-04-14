@@ -1,8 +1,7 @@
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { LangProvider } from "./i18n";
 import Layout from "./components/Layout";
 import Landing from "./pages/Landing";
-import Predict from "./pages/Predict";
 import Interpret from "./pages/Interpret";
 import Agent from "./pages/Agent";
 
@@ -13,9 +12,10 @@ function App() {
         <Routes>
           <Route element={<Layout />}>
             <Route path="/" element={<Landing />} />
-            <Route path="/predict" element={<Predict />} />
-            <Route path="/interpret" element={<Interpret />} />
             <Route path="/agent" element={<Agent />} />
+            <Route path="/interpret" element={<Interpret />} />
+            {/* Legacy route — redirect to Agent */}
+            <Route path="/predict" element={<Navigate to="/agent" replace />} />
           </Route>
         </Routes>
       </BrowserRouter>

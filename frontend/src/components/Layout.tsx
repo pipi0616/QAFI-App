@@ -1,5 +1,5 @@
 import { NavLink, Outlet } from "react-router-dom";
-import { Activity, BarChart3, Brain, Zap, Home, Globe } from "lucide-react";
+import { Brain, Zap, Home, Globe } from "lucide-react";
 import { useLang, t } from "../i18n";
 
 export default function Layout() {
@@ -7,9 +7,8 @@ export default function Layout() {
 
   const navItems = [
     { to: "/", icon: Home, label: t("nav_home", lang) },
-    { to: "/predict", icon: BarChart3, label: t("nav_predict", lang) },
-    { to: "/interpret", icon: Brain, label: t("nav_interpret", lang) },
     { to: "/agent", icon: Zap, label: t("nav_agent", lang) },
+    { to: "/interpret", icon: Brain, label: t("nav_interpret", lang) },
   ];
 
   return (

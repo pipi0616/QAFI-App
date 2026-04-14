@@ -123,7 +123,7 @@ export default function Landing() {
           {/* CTA buttons */}
           <div style={{ display: "flex", gap: 12, justifyContent: "center" }}>
             <button
-              onClick={() => navigate("/predict")}
+              onClick={() => navigate("/agent")}
               style={{
                 padding: "14px 32px", borderRadius: 10, border: "none",
                 background: "#3b82f6", color: "#fff", fontSize: 16, fontWeight: 600,
